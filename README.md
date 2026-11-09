@@ -1,6 +1,6 @@
 # herdr-magpie-routing
 
-A live view of [magpie](https://usemagpie.ai/) model routing inside [Herdr](https://herdr.dev/). It shows which coding-agent sessions are running, what each agent and subagent is doing, which model served them, and how much quota is left.
+A live view of [magpie](https://usemagpie.ai/) ([GitHub](https://github.com/yetone/magpie)) model routing inside [Herdr](https://herdr.dev/) ([GitHub](https://github.com/herdrdev)). It shows which coding-agent sessions are running, what each agent and subagent is doing, which model served them, and how much quota is left.
 
 It reads magpie's own files on the machine where magpie runs. It needs no gateway key and changes nothing.
 
