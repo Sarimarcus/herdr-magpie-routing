@@ -291,9 +291,9 @@ export default class MagpieRouting extends View {
         ? [div().p(14).text_color(t.dim).child("Loading magpie…")]
         : [
             this.section(t, "Sessions", "last 30 min"), ...this.sessionRows(t, sessions),
-            this.section(t, "Groups", "last hour · ⚠ = fallback"), ...this.groupRows(t),
             this.section(t, "Quota"), ...this.quotaRows(t),
             this.section(t, "Latest requests", "context → output tokens"), ...this.feedRows(t),
+            this.section(t, "Groups", "last hour · ⚠ = fallback"), ...this.groupRows(t),
             div().h(12),
           ];
     return v_flex().id("magpie-routing").size_full().min_h(0).rounded(10).overflow_hidden()

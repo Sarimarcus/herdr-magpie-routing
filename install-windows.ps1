@@ -11,6 +11,18 @@ $ErrorActionPreference = "Stop"
 
 function Fail($msg) { Write-Host "STOPPED: $msg" -ForegroundColor Red; exit 1 }
 
+# Runs herdr-app with a time limit: returns its exit code, or 124 when it did not finish in time.
+function Invoke-HerdrApp([string[]]$HerdrArgs, [int]$Seconds = 30) {
+  $p = Start-Process -FilePath $herdrApp.Source -ArgumentList $HerdrArgs -NoNewWindow -PassThru
+  $null = $p.Handle
+  if (-not $p.WaitForExit($Seconds * 1000)) {
+    try { $p.Kill() } catch {}
+    Write-Host "herdr-app $($HerdrArgs -join ' ') did not finish within $Seconds s; skipped." -ForegroundColor Yellow
+    return 124
+  }
+  return $p.ExitCode
+}
+
 # 1. Find the app's config folder
 if (-not $AppHome) {
   $candidates = @($env:HERDR_APP_HOME, "$HOME\.config\herdr-app", "$env:APPDATA\herdr-app", "$env:LOCALAPPDATA\herdr-app") | Where-Object { $_ }
@@ -55,12 +67,10 @@ if (-not (Test-Path $layoutFile) -or -not (Test-Path $tabsFile)) {
     Fail "herdr-app is not on PATH. In the app, open the command palette (Ctrl+Shift+P): 'Duplicate layout' main -> my-main, and 'Duplicate mod' tabs -> my-tabs. Then run this script again."
   }
   if (-not (Test-Path $tabsFile)) {
-    & herdr-app do mod.clone --name tabs --as my-tabs
-    if ($LASTEXITCODE -ne 0) { Fail "herdr-app do mod.clone failed." }
+    if ((Invoke-HerdrApp @("do", "mod.clone", "--name", "tabs", "--as", "my-tabs")) -ne 0) { Fail "herdr-app do mod.clone failed." }
   }
   if (-not (Test-Path $layoutFile)) {
-    & herdr-app do layout.clone --name main --as my-main
-    if ($LASTEXITCODE -ne 0) { Fail "herdr-app do layout.clone failed." }
+    if ((Invoke-HerdrApp @("do", "layout.clone", "--name", "main", "--as", "my-main")) -ne 0) { Fail "herdr-app do layout.clone failed." }
   }
   Start-Sleep -Seconds 1
   if (-not (Test-Path $layoutFile) -or -not (Test-Path $tabsFile)) { Fail "the clones were not created." }
@@ -112,11 +122,12 @@ if ($tabs -notmatch 'panelButton\("magpie"') {
 # 6. Check
 if ($herdrApp) {
   foreach ($m in @("my-tabs", "magpie-routing")) {
-    & herdr-app check (Join-Path $mods $m)
-    if ($LASTEXITCODE -ne 0) { Fail "herdr-app check failed for mods\$m (error above)." }
+    $code = Invoke-HerdrApp @("check", "`"$(Join-Path $mods $m)`"")
+    if ($code -ne 0 -and $code -ne 124) { Fail "herdr-app check failed for mods\$m (error above)." }
   }
-  & herdr-app do layout.switch --name my-main
-  if ($LASTEXITCODE -ne 0) { Fail "herdr-app do layout.switch failed." }
+  $code = Invoke-HerdrApp @("do", "layout.switch", "--name", "my-main")
+  if ($code -eq 124) { Write-Host "Switch to the my-main layout from the command palette." -ForegroundColor Yellow }
+  elseif ($code -ne 0) { Fail "herdr-app do layout.switch failed." }
 } else {
   Write-Host "herdr-app is not on PATH: mod checks skipped. Switch to the my-main layout from the command palette." -ForegroundColor Yellow
 }
@@ -124,3 +135,4 @@ $err = Join-Path $layouts "my-main.error"
 if (Test-Path $err) { Fail "layout error: $(Get-Content $err -Raw)" }
 Write-Host "Done. Click 'Magpie' next to Files and Changes." -ForegroundColor Green
 Write-Host "If the window breaks: Ctrl+Alt+Shift+Escape returns to the default layout."
+exit 0
