@@ -6,6 +6,7 @@ import { spaces, focused, exec, theme, settings, machines, agents as herdrAgents
 const MACHINE = "vps";
 const FEED = 10;
 const ERRORS = 5;                        // rows in the Errors section
+const SYS_WARN = { load: [1, 1.5], ram: [0.8, 0.9], disk: [0.15, 0.05] };  // header: yellow, red
 const FINISHED = 5;                      // finished subagents listed per session before the rest fold
 const KEEP = 1500;                       // log lines kept in memory
 const ACTIVE_MS = 5 * 60 * 1000;         // "active" and req/min in the header
@@ -57,6 +58,7 @@ function headlessLabel(prompt) {
   return `headless · ${cmd ? `${cmd[1]} ${args?.[1] ?? ""}`.trim() : prompt.trim().split("\n")[0] || "claude -p"}`;
 }
 const ACCOUNTS = `${SH_MAGPIE}
+echo "@@sys $(cut -d' ' -f1 /proc/loadavg 2>/dev/null) $(nproc 2>/dev/null) $(awk '/^MemTotal/{t=$2}/^MemAvailable/{a=$2}END{print t, a}' /proc/meminfo 2>/dev/null) $(df -Pk / 2>/dev/null | awk 'NR==2{print $2, $4}')"
 echo "@@groups"; "$M" groups 2>/dev/null
 echo "@@accounts"; "$M" accounts --json 2>/dev/null`;
 
@@ -180,6 +182,13 @@ function parseRead(stdout) {
   return out;
 }
 
+// Load average, cores, memory and root disk of the magpie machine, from Linux's /proc and df. null elsewhere.
+function parseSys(text) {
+  const [load, cores, memTotal, memAvail, diskTotal, diskFree] = (text.match(/^@@sys (.*)$/m)?.[1] || "").split(" ").map(Number);
+  if (!(cores > 0 && memTotal > 0 && diskTotal > 0)) return null;
+  return { load, cores, ram: 1 - memAvail / memTotal, diskFree, diskShare: diskFree / diskTotal };
+}
+
 function parseGroups(text) {
   const groups = new Map();
   for (const line of text.split("\n")) {
@@ -257,6 +266,7 @@ export default class MagpieRouting extends View {
     this.groups = new Map();
     this.accounts = [];
     this.accountsError = null;
+    this.sys = null;
   }
 
   refresh(cx) {
@@ -329,11 +339,12 @@ export default class MagpieRouting extends View {
   refreshAccounts(cx) {
     const on = machine(), seq = ++this.accountsSeq;
     cx.spawn(async (cx) => {
-      let accounts = [], groups = null, error = null;
+      let accounts = [], groups = null, error = null, sys = null;
       try {
         const out = (await sh(ACCOUNTS, on)).stdout;
         const i = out.indexOf("@@accounts\n");
         groups = parseGroups(i < 0 ? out : out.slice(0, i));
+        sys = parseSys(out);
         const json = i < 0 ? "" : out.slice(i + 11).trim();
         if (!json) error = "magpie accounts failed";
         else accounts = JSON.parse(json);
@@ -342,6 +353,7 @@ export default class MagpieRouting extends View {
       this.accounts = accounts;
       this.accountsError = error;
       if (groups) this.groups = groups;
+      this.sys = sys;
       if (this.groups.size && this.held.length) this.alert(this.held.splice(0));
       cx.notify();
     });
@@ -539,6 +551,20 @@ export default class MagpieRouting extends View {
       .child(div().flex_none().child(`${n} req · ${kTok(out)}`)));
   }
 
+  // Yellow and red past SYS_WARN's thresholds: load per core, RAM used, disk share free.
+  sysStats(t) {
+    const { load, cores, ram, diskFree, diskShare } = this.sys;
+    const col = (bad, worse) => (worse ? t.ansi1 : bad ? t.ansi3 : t.dim);
+    const stat = (text, c) => div().flex_none().text_color(c).child(text);
+    return h_flex().gap(4).items_center().text_size(11).whitespace_nowrap()
+      .child(stat(`load ${load.toFixed(1)}/${cores}`, col(load / cores >= SYS_WARN.load[0], load / cores >= SYS_WARN.load[1])))
+      .child(stat("·", t.dim))
+      .child(stat(`ram ${Math.round(ram * 100)}%`, col(ram >= SYS_WARN.ram[0], ram >= SYS_WARN.ram[1])))
+      .child(stat("·", t.dim))
+      .child(stat(`disk ${Math.round(diskFree / 1048576)}G free`, col(diskShare <= SYS_WARN.disk[0], diskShare <= SYS_WARN.disk[1])))
+      .child(stat("·", t.dim));
+  }
+
   feedRows(t) {
     return this.reqs.slice(-FEED).reverse().map((r, i) => h_flex().id(`r-${i}`).px(14).h(20).gap(8).items_center().text_size(11)
       .child(div().w(56).flex_none().text_color(t.dim).child(hhmm(r.t)))
@@ -594,6 +620,7 @@ export default class MagpieRouting extends View {
         .child(div().px(5).py(1).rounded(4).border_1().border_color(t.border).text_size(10).text_color(t.muted)
           .child(this.on ?? "local"))
         .child(div().flex_1())
+        .when(this.sys, (e) => e.child(this.sysStats(t)))
         .child(div().text_size(11).text_color(t.dim).child(`${active} active · ${perMin} req/min`)))
       .child(v_flex().id("magpie-body").flex_1().min_h(0).overflow_y_scrollbar().children(body));
   }
