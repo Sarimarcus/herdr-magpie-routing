@@ -2,7 +2,7 @@
 
 ![The Magpie panel](images/panel.png)
 
-*Mock render from real usage data, with session titles replaced and the error message shortened.*
+*Mock render from real usage data, with session titles and subagent descriptions replaced and error messages shortened.*
 
 ## Header
 
