@@ -1,10 +1,12 @@
 import { View, div } from "gpui-kit";
 import { v_flex, h_flex, Scrollbar } from "gpui-base";
-import { spaces, focused, exec, theme, settings, machines } from "herdr";
+import { spaces, focused, exec, theme, settings, machines, agents as herdrAgents, run, notify } from "herdr";
 
 // The Herdr machine magpie runs on. undefined follows the shown space, as Changes does.
 const MACHINE = "vps";
 const FEED = 10;
+const QUIET_MS = 5 * 60 * 1000;          // a running subagent silent this long is flagged
+const ALERT_EVERY_MS = 10 * 60 * 1000;   // at most one toast per group and kind in this window
 
 const READ = `M="$HOME/.local/bin/magpie"; [ -x "$M" ] || M=magpie
 echo "@@groups"; "$M" groups 2>/dev/null
@@ -51,6 +53,33 @@ const hhmm = (t) => new Date(t).toTimeString().slice(0, 8);
 const groupName = (ref) => ref.replace(/^group\//, "").replace(/^csf-/, "");
 const shortModel = (m) => (m || "").replace(/^claude-/, "");
 const ago = (iso) => { const s = Math.max(0, Math.round((Date.now() - new Date(iso)) / 1000)); return s < 10 ? "now" : s < 60 ? `${s}s ago` : `${Math.floor(s / 60)}m ago`; };
+const norm = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+const ctxOf = (r) => (r.in || 0) + (r.cache_read || 0) + (r.cache_write || 0);
+const failed = (r) => Boolean(r.status && r.status !== 200);
+const dur = (ms) => { const m = Math.max(0, Math.round(ms / 6e4)); return m >= 60 ? `${Math.floor(m / 60)}h${String(m % 60).padStart(2, "0")}` : `${m}m`; };
+const median = (xs) => { const v = xs.filter((x) => x > 0).sort((a, b) => a - b); return v.length ? v[Math.floor(v.length / 2)] : 0; };
+// First group member, or null outside a group: anything else served means a fallback.
+const fellBack = (groups, r) => {
+  const first = modelOf((groups.get(r.req)?.members || [])[0]);
+  return Boolean(r.req?.startsWith("group/") && first && modelOf(r.served || r.model) !== first);
+};
+
+// Quota windows are named "5 hours" / "7 days": their length, to project when they run out.
+function windowMs(name) {
+  const m = String(name).match(/^(\d+)\s*(hour|day)/);
+  return m ? Number(m[1]) * (m[2] === "hour" ? 3.6e6 : 864e5) : 0;
+}
+
+// At the window's average rate so far: "on pace" when it lasts until the reset, else when it runs out.
+function pace(w) {
+  const len = windowMs(w.name), left = new Date(w.resetsAt) - Date.now();
+  if (!len || !(left > 0) || !(w.used > 0)) return null;
+  const elapsed = len - left;
+  if (elapsed < len * 0.05) return null;
+  const toFull = ((100 - w.used) * elapsed) / w.used;
+  return toFull >= left ? { ok: true, text: "on pace" } : { ok: false, text: `out in ${dur(toFull)}` };
+}
+
 const kTok = (n) => (n >= 1000 ? `${(n / 1000).toFixed(n >= 10000 ? 0 : 1)}k` : String(n || 0));
 
 function resetIn(iso) {
@@ -89,6 +118,8 @@ export default class MagpieRouting extends View {
     this.titles = new Map();
     this.agents = new Map();
     this.accounts = [];
+    this.seenT = null;
+    this.alerted = new Map();
     this.accountsError = null;
     this.accountsSeq = 0;
     this.error = null;
@@ -116,6 +147,7 @@ export default class MagpieRouting extends View {
           this.groups = groups;
           this.reqs = reqs;
           this.cwds = cwds;
+          this.alert(reqs, groups);
           if ([...cwds.keys()].some((sid) => !this.titles.has(sid))) this.refreshTitles(cx);
           this.error = groups.size || reqs.length ? null : `magpie not found on ${where}`;
         }
@@ -129,6 +161,28 @@ export default class MagpieRouting extends View {
       this.busy = false;
       cx.notify();
     });
+  }
+
+  // Toasts for requests that failed or fell back since the last refresh. The first read only sets the baseline.
+  alert(reqs, groups) {
+    const newest = reqs.length ? reqs[reqs.length - 1].t : null;
+    if (this.seenT === null) { this.seenT = newest; return; }
+    const since = new Date(this.seenT);
+    for (const r of reqs) {
+      if (!(new Date(r.t) > since)) continue;
+      const kind = failed(r) ? "error" : fellBack(groups, r) ? "fallback" : null;
+      if (!kind) continue;
+      const key = `${r.req}|${kind}`, last = this.alerted.get(key) || 0;
+      if (Date.now() - last < ALERT_EVERY_MS) continue;
+      this.alerted.set(key, Date.now());
+      const group = groupName(r.req || r.model || "?");
+      try {
+        notify(kind === "error"
+          ? { title: `magpie: ${group} request failed (${r.status})`, body: `${modelOf(r.served || r.model)} via ${r.provider || "?"}`, level: "error", timeout: 10000 }
+          : { title: `magpie: ${group} fell back`, body: `served by ${modelOf(r.served)}`, level: "warning", timeout: 8000 });
+      } catch {}
+    }
+    if (newest) this.seenT = newest;
   }
 
   refreshAccounts(cx) {
@@ -186,14 +240,16 @@ export default class MagpieRouting extends View {
       }
       wins.forEach((w, i) => {
         const pct = Math.min(100, Math.max(0, w.used));
-        const col = pct >= 90 ? t.ansi1 : pct >= 70 ? t.ansi3 : t.ansi2;
+        const col = pct >= 90 ? t.ansi1 : pct >= 70 ? t.ansi3 : t.ansi2, pc = pace(w);
         rows.push(h_flex().id(`q-${a.agent}-${i}`).px(14).h(22).gap(8).items_center()
           .child(div().w(56).text_color(i ? t.dim : t.foreground).child(i ? "" : a.agent))
           .child(div().w(58).text_color(t.muted).truncate().child(w.name))
           .child(div().flex_1().min_w(40).h(8).rounded(4).bg(t.raised).overflow_hidden()
             .child(div().h_full().rounded(4).bg(col).w(`${pct}%`)))
           .child(div().w(34).text_size(12).child(`${pct}%`))
-          .child(div().w(52).text_size(11).text_color(t.dim).child(`↻ ${resetIn(w.resetsAt)}`)));
+          .child(div().w(70).flex_none().text_size(11).whitespace_nowrap().truncate()
+            .text_color(!pc ? t.dim : pc.ok ? t.ansi2 : t.ansi1).child(pc ? pc.text : ""))
+          .child(div().w(52).flex_none().text_size(11).text_color(t.dim).child(`↻ ${resetIn(w.resetsAt)}`)));
       });
     }
     return rows;
@@ -204,8 +260,12 @@ export default class MagpieRouting extends View {
     const byGroup = new Map();
     for (const r of this.reqs) {
       if (!r.req?.startsWith("group/")) continue;
-      const g = byGroup.get(r.req) || { n: 0, fails: 0, last: null };
-      if (new Date(r.t) >= since) { g.n++; if (r.status && r.status !== 200) g.fails++; }
+      const g = byGroup.get(r.req) || { n: 0, fails: 0, last: null, ctx: 0, cached: 0, ttft: [] };
+      if (new Date(r.t) >= since) {
+        g.n++;
+        if (failed(r)) g.fails++;
+        g.ctx += ctxOf(r); g.cached += r.cache_read || 0; g.ttft.push(r.ttft_ms || 0);
+      }
       g.last = r;
       byGroup.set(r.req, g);
     }
@@ -215,7 +275,7 @@ export default class MagpieRouting extends View {
   groupRows(t) {
     const byGroup = this.groupStats(Date.now() - 3.6e6);
     const refs = [...new Set([...this.groups.keys(), ...byGroup.keys()])].sort();
-    return refs.map((ref, i) => {
+    return refs.map((ref) => {
       const members = (this.groups.get(ref)?.members || []).map(modelOf);
       const g = byGroup.get(ref), served = g?.last ? modelOf(g.last.served) : null;
       const chain = members.length ? members : served ? [served] : [];
@@ -223,7 +283,8 @@ export default class MagpieRouting extends View {
         .child(h_flex().gap(8).items_center()
           .child(div().flex_1().min_w(0).truncate().child(groupName(ref)))
           .when(Boolean(g?.fails), (e) => e.child(div().text_size(11).text_color(t.ansi1).child(`${g.fails} err`)))
-          .child(div().flex_none().text_size(11).text_color(t.dim).child(g?.n ? `${g.n} req` : "idle")))
+          .child(div().flex_none().text_size(11).text_color(t.dim).whitespace_nowrap().child(!g?.n ? "idle"
+            : `${g.n} req · cache ${g.ctx ? Math.round((100 * g.cached) / g.ctx) : 0}% · ttft ${(median(g.ttft) / 1000).toFixed(1)}s`)))
         .child(h_flex().gap(4).items_center().overflow_hidden().text_size(11)
           .children(chain.flatMap((m, i) => {
             const on = m === served, col = !on ? t.dim : i === 0 ? t.ansi2 : t.blocked;
@@ -245,9 +306,9 @@ export default class MagpieRouting extends View {
       if (!r.session || new Date(r.t) < since) continue;
       const s = bySession.get(r.session) || { last: null, agents: new Map() };
       const key = r.subagent || "";
-      const g = s.agents.get(key) || { n: 0, out: 0, fails: 0, last: null };
-      g.n++; g.out += r.out || 0; g.last = r;
-      if (r.status && r.status !== 200) g.fails++;
+      const g = s.agents.get(key) || { n: 0, out: 0, fails: 0, last: null, maxCtx: 0 };
+      g.n++; g.out += r.out || 0; g.last = r; g.maxCtx = Math.max(g.maxCtx, ctxOf(r));
+      if (failed(r)) g.fails++;
       s.agents.set(key, g);
       s.last = r;
       bySession.set(r.session, s);
@@ -255,38 +316,66 @@ export default class MagpieRouting extends View {
     return [...bySession].sort((a, b) => new Date(b[1].last.t) - new Date(a[1].last.t));
   }
 
+  // The Herdr agent whose terminal title is this session's title (Claude Code titles its terminal with it).
+  paneFor(sid) {
+    const title = norm(this.titles.get(sid));
+    if (title.length < 4) return null;
+    try { return herdrAgents().find((a) => norm(a.title) === title || norm(a.title).endsWith(title))?.pane ?? null; } catch { return null; }
+  }
+
+  // Context the main agent last sent, against the window it apparently has: 1M once it went past 200k.
+  contextCell(t, s) {
+    const g = s.agents.get("") || [...s.agents.values()].pop();
+    const ctx = ctxOf(g.last), limit = g.maxCtx > 200_000 ? 1_000_000 : 200_000;
+    const pct = Math.min(100, Math.round((100 * ctx) / limit));
+    const col = pct >= 90 ? t.ansi1 : pct >= 75 ? t.ansi3 : t.muted;
+    return h_flex().flex_none().gap(4).items_center().text_size(11)
+      .child(div().w(36).h(5).rounded(3).bg(t.raised).overflow_hidden().child(div().h_full().bg(col).w(`${pct}%`)))
+      .child(div().text_color(col).whitespace_nowrap().child(`${kTok(ctx)}/${limit >= 1e6 ? "1M" : "200k"}`));
+  }
+
   sessionRows(t, sessions) {
     if (!sessions.length) return [div().px(14).h(22).text_color(t.dim).child("no session active in the last 30 min")];
-    return sessions.map(([sid, s], i) => {
+    return sessions.map(([sid, s]) => {
       const age = Date.now() - new Date(s.last.t);
-      const dot = age < 60_000 ? t.ansi2 : age < 300_000 ? t.ansi3 : t.raised;
+      const broken = [...s.agents.values()].some((g) => failed(g.last));
+      const dot = broken ? t.ansi1 : age < 60_000 ? t.ansi2 : age < 300_000 ? t.ansi3 : t.raised;
+      const pane = this.paneFor(sid);
       return v_flex().id(`s-${sid}`).px(14).py(4).gap(1)
+        .when(Boolean(pane), (e) => e.cursor_pointer().on_click(() => run("pane.focus", { pane })))
         .child(h_flex().gap(8).items_center()
           .child(div().w(8).h(8).rounded(4).flex_none().bg(dot))
-          .child(div().flex_1().min_w(0).truncate().font_semibold().child(this.sessionLabel(sid)))
-          .child(div().flex_none().text_size(11).text_color(t.dim).child(ago(s.last.t))))
+          .child(div().flex_1().min_w(0).truncate().font_semibold().child(this.sessionLabel(sid) + (pane ? "  ↗" : "")))
+          .child(this.contextCell(t, s))
+          .child(div().w(52).flex_none().text_size(11).text_color(t.dim).child(ago(s.last.t))))
         .children(this.agentLines(t, sid, s.agents));
     });
   }
 
   // One line per agent in a session: the main agent first, then running subagents, then finished ones.
+  // A running subagent silent for QUIET_MS, or any agent whose last request failed, is flagged.
   agentLines(t, sid, agents) {
     const rows = [...agents].map(([id, g]) => ({ id, g, meta: id ? this.agents.get(`${sid}/${id}`) : null }));
     const rank = (r) => (!r.id ? 0 : r.meta?.finished ? 2 : 1);
     rows.sort((a, b) => rank(a) - rank(b) || new Date(b.g.last.t) - new Date(a.g.last.t));
     return rows.map(({ id, g, meta }) => {
-      const ref = g.last.req || g.last.model || "";
       const served = modelOf(g.last.served || g.last.model);
-      const first = modelOf((this.groups.get(ref)?.members || [])[0]);
-      const fallback = ref.startsWith("group/") && first && served !== first;
+      const fallback = fellBack(this.groups, g.last);
       const running = !id || !meta?.finished;
+      const quietFor = Date.now() - new Date(g.last.t);
+      const quiet = Boolean(id) && running && quietFor > QUIET_MS;
+      const broke = failed(g.last);
       const name = !id ? "main" : meta ? `${meta.agentType || "agent"}${meta.description ? ` · ${meta.description}` : ""}` : `subagent ${id.slice(0, 7)}`;
+      const flag = broke ? `last call ${g.last.status}` : quiet ? `quiet ${dur(quietFor)}` : "";
+      const icon = !id ? "▸" : broke ? "✕" : quiet ? "◌" : running ? "●" : "✓";
+      const iconCol = broke ? t.ansi1 : quiet ? t.ansi3 : running ? t.ansi2 : t.dim;
       return h_flex().pl(16).h(20).gap(6).items_center().overflow_hidden().whitespace_nowrap().text_size(11)
-        .child(div().w(10).flex_none().text_color(running ? t.ansi2 : t.dim).child(!id ? "▸" : running ? "●" : "✓"))
+        .child(div().w(10).flex_none().text_color(iconCol).child(icon))
         .child(div().flex_1().min_w(0).truncate().text_color(running ? t.foreground : t.dim).child(name))
+        .when(Boolean(flag), (e) => e.child(div().flex_none().text_color(broke ? t.ansi1 : t.ansi3).child(flag)))
         .child(div().flex_shrink_1().min_w(0).truncate().text_color(fallback ? t.blocked : t.muted)
           .child(`${shortModel(served)}${fallback ? " ⚠" : ""}`))
-        .when(Boolean(g.fails), (e) => e.child(div().flex_none().text_color(t.ansi1).child(`${g.fails} err`)))
+        .when(Boolean(g.fails) && !broke, (e) => e.child(div().flex_none().text_color(t.ansi1).child(`${g.fails} err`)))
         .child(div().flex_none().whitespace_nowrap().text_color(t.dim).child(`${g.n} req · ${kTok(g.out)}`));
     });
   }
@@ -294,7 +383,7 @@ export default class MagpieRouting extends View {
   feedRows(t) {
     return this.reqs.slice(-FEED).reverse().map((r, i) => {
       const ok = !r.status || r.status === 200;
-      const tok = (r.in || 0) + (r.cache_read || 0) + (r.cache_write || 0);
+      const tok = ctxOf(r);
       return h_flex().id(`r-${i}`).px(14).h(20).gap(8).items_center().text_size(11)
         .child(div().w(56).flex_none().text_color(t.dim).child(hhmm(r.t)))
         .child(div().w(80).flex_none().truncate().text_color(t.muted).child(groupName(r.req || r.model || "")))
@@ -318,7 +407,7 @@ export default class MagpieRouting extends View {
             this.section(t, "Sessions", "last 30 min", true), ...this.sessionRows(t, sessions),
             this.section(t, "Quota"), ...this.quotaRows(t),
             this.section(t, "Latest requests", "context → output tokens"), ...this.feedRows(t),
-            this.section(t, "Groups", "last hour · ⚠ = fallback"), ...this.groupRows(t),
+            this.section(t, "Groups", "last hour · ⚠ fallback · cache = context read from cache"), ...this.groupRows(t),
             div().h(12),
           ];
     return v_flex().id("magpie-routing").size_full().min_h(0).rounded(10).overflow_hidden()
