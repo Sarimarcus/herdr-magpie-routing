@@ -16,6 +16,7 @@ magpie routes each request to a group of models with fallbacks. That's great unt
 - **Sessions:** each Claude Code session with its title, context fill and every subagent, its model, requests and output tokens. Click to jump to its pane.
 - **Quota:** one bar per account window, with reset time and whether you're on pace.
 - **Latest requests:** group asked → model served, context → output tokens, duration.
+- **Errors:** the last errors with their message, including the ones magpie handed on to the next model.
 - **Groups:** each fallback chain with the last-served model highlighted, cache-hit share and time to first token.
 - **Toasts** when a request fails or a group falls back.
 

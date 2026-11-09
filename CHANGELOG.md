@@ -3,6 +3,8 @@
 ## Unreleased
 
 - Headless `claude -p` sessions are labelled `headless · <command or first prompt line>` instead of `folder · id`.
+- Errors section: the hour's last 5 distinct errors with their message and a repeat count, handed-on ones marked as such.
+- An agent with failed requests shows its latest error message under it.
 
 ## 0.1.0 (2026-11-09)
 

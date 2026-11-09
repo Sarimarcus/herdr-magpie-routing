@@ -5,6 +5,7 @@ import { spaces, focused, exec, theme, settings, machines, agents as herdrAgents
 // The Herdr machine magpie runs on. undefined follows the shown space, as Changes does.
 const MACHINE = "vps";
 const FEED = 10;
+const ERRORS = 5;                        // rows in the Errors section
 const KEEP = 1500;                       // log lines kept in memory
 const ACTIVE_MS = 5 * 60 * 1000;         // "active" and req/min in the header
 const QUIET_MS = 5 * 60 * 1000;          // a running subagent silent this long is flagged
@@ -140,6 +141,14 @@ const bar = (t, pct, col, h) => div().h(h).rounded(h / 2).bg(t.raised).overflow_
   .child(div().h_full().rounded(h / 2).bg(col).w(`${pct}%`));
 const row = (id) => h_flex().id(id).px(14).h(22).gap(8).items_center();
 const note = (col, text) => div().px(14).h(22).text_color(col).truncate().child(text);
+// An error message without the model name it repeats, cut to a few lines.
+function errText(r) {
+  const m = String(r.err || "no message").replace(/\s+/g, " ").replace(`${servedOf(r)} `, "");
+  return m.length > 200 ? `${m.slice(0, 199)}…` : m;
+}
+// The latest failure's status, model and message, on its own line.
+const errLine = (t, r, pl) => div().pl(pl).h(16).text_size(10).text_color(t.ansi1).truncate()
+  .child(`${hhmm(r.t)} ${r.status} ${shortModel(servedOf(r))}: ${errText(r)}`);
 
 function parseRead(stdout) {
   const out = { nolog: false, mode: null, size: 0, rows: [], cwds: new Map(), agents: new Map() };
@@ -190,7 +199,7 @@ function sessionsOf(reqs) {
     g.n++; g.out += r.out || 0; g.maxCtx = Math.max(g.maxCtx, ctxOf(r));
     g.last = later(g.last, r);
     if (ctxOf(r) > 0) g.lastCtx = later(g.lastCtx, r);
-    if (failed(r)) g.fails++;
+    if (failed(r)) { g.fails++; g.lastFail = later(g.lastFail, r); }
     s.agents.set(key, g);
     s.last = later(s.last, r);
     bySession.set(r.session, s);
@@ -503,7 +512,7 @@ export default class MagpieRouting extends View {
       const flag = broke ? `last call ${g.last.status}` : quiet ? `quiet ${dur(quietFor)}` : "";
       const icon = !id ? "▸" : broke ? "✕" : quiet ? "◌" : running ? "●" : meta ? "✓" : "·";
       const iconCol = broke ? t.ansi1 : quiet ? t.ansi3 : running ? t.ansi2 : t.dim;
-      return h_flex().pl(16).h(20).gap(6).items_center().overflow_hidden().whitespace_nowrap().text_size(11)
+      const line = h_flex().pl(16).h(20).gap(6).items_center().overflow_hidden().whitespace_nowrap().text_size(11)
         .child(div().w(10).flex_none().text_color(iconCol).child(icon))
         .child(div().flex_1().min_w(0).truncate().text_color(running ? t.foreground : t.dim).child(name))
         .when(flag, (e) => e.child(div().flex_none().text_color(broke ? t.ansi1 : t.ansi3).child(flag)))
@@ -511,6 +520,7 @@ export default class MagpieRouting extends View {
           .child(`${shortModel(servedOf(g.last))}${fallback ? " ⚠" : ""}`))
         .when(g.fails && !broke, (e) => e.child(div().flex_none().text_color(t.ansi1).child(`${g.fails} err`)))
         .child(div().flex_none().whitespace_nowrap().text_color(t.dim).child(`${g.n} req · ${kTok(g.out)}`));
+      return g.fails ? v_flex().child(line).child(errLine(t, g.lastFail, 32)) : line;
     });
   }
 
@@ -521,6 +531,26 @@ export default class MagpieRouting extends View {
       .child(div().flex_1().min_w(0).truncate().text_color(failed(r) ? t.ansi1 : t.foreground)
         .child(shortModel(servedOf(r)) + (r.kind ? ` · ${r.kind}` : "") + statusTag(r)))
       .child(div().flex_none().text_color(t.dim).child(`${kTok(ctxOf(r))} → ${kTok(r.out)} · ${((r.ms || 0) / 1000).toFixed(1)}s`)));
+  }
+
+  errorRows(t) {
+    const since = Date.now() - 3.6e6;
+    // Newest first; repeats of the same error collapse into its latest occurrence with a count.
+    const byKey = new Map();
+    for (const r of this.reqs) {
+      if (r._end < since || !r.status || r.status === 200 || canceled(r)) continue;
+      const key = [askedOf(r), servedOf(r), r.status, Boolean(r.handed_on), errText(r)].join("|");
+      byKey.set(key, { r, n: (byKey.get(key)?.n || 0) + 1 });
+    }
+    const errs = [...byKey.values()].sort((a, b) => b.r._end - a.r._end).slice(0, ERRORS);
+    if (!errs.length) return [note(t.dim, "no error in the last hour")];
+    return errs.map(({ r, n }, i) => v_flex().id(`e-${i}`).px(14).py(2).text_size(11)
+      .child(h_flex().gap(8).items_center()
+        .child(div().w(56).flex_none().text_color(t.dim).child(hhmm(r.t)))
+        .child(div().w(80).flex_none().truncate().text_color(t.muted).child(askedOf(r)))
+        .child(div().flex_1().min_w(0).truncate().text_color(r.handed_on ? t.blocked : t.ansi1)
+          .child(`${shortModel(servedOf(r))}  ${r.status}${r.handed_on ? " · handed on" : ""}${n > 1 ? `  ×${n}` : ""}`)))
+      .child(div().pl(64).text_color(t.muted).child(errText(r))));
   }
 
   render(_cx) {
@@ -535,6 +565,7 @@ export default class MagpieRouting extends View {
             this.section(t, "Sessions", "last 30 min", true), ...this.sessionRows(t, sessions),
             this.section(t, "Quota"), ...this.quotaRows(t),
             this.section(t, "Latest requests", "context → output tokens"), ...this.feedRows(t),
+            this.section(t, "Errors", "last hour · handed on = next group member retried it"), ...this.errorRows(t),
             this.section(t, "Groups", "last hour · ⚠ fallback · cache = context read from cache"), ...this.groupRows(t),
             div().h(12),
           ];

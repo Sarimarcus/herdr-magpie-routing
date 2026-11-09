@@ -55,6 +55,17 @@ The last 10 requests: time, the group or model asked for, the model that served 
 | status code | Shown after the model when it isn't 200 |
 | red model | Failed. Cancelled (499) or handed-on requests are not failures |
 
+## Errors (last hour)
+
+The last 5 distinct errors with their message: time, group asked, model and status. Repeats of the same error show once, at their latest time, with a count (`×4`).
+
+- **Red:** a real failure; the agent got the error.
+- **Orange, `handed on`:** magpie passed the request to the group's next member, so the agent never saw it. This is what shows up as a fallback (⚠) elsewhere. A safety-filter refusal on one model, for example, often lands here.
+
+Cancelled requests (499) aren't listed.
+
+An agent whose requests failed also gets its latest error, in red, on a line under it in Sessions.
+
 ## Groups (last hour)
 
 Each magpie group with its fallback chain, `first › second › third`. The member that served the group's latest request is highlighted, with ⚠ when it isn't the first.
