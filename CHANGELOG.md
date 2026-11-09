@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- A session lists its 5 newest finished subagents; the rest fold into one `✓ +N finished` line with their requests and output tokens. A finished subagent that failed is always listed.
+
 ## 0.2.1 (2026-11-09)
 
 - A session with no transcript reads `no transcript · <id>` instead of `? · <id>`.

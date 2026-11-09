@@ -6,6 +6,7 @@ import { spaces, focused, exec, theme, settings, machines, agents as herdrAgents
 const MACHINE = "vps";
 const FEED = 10;
 const ERRORS = 5;                        // rows in the Errors section
+const FINISHED = 5;                      // finished subagents listed per session before the rest fold
 const KEEP = 1500;                       // log lines kept in memory
 const ACTIVE_MS = 5 * 60 * 1000;         // "active" and req/min in the header
 const QUIET_MS = 5 * 60 * 1000;          // a running subagent silent this long is flagged
@@ -498,7 +499,15 @@ export default class MagpieRouting extends View {
     const rows = [...agents].map(([id, g]) => ({ id, g, meta: id ? this.agents.get(`${sid}/${id}`) : null }));
     const rank = (r) => (!r.id ? 0 : r.meta?.finished ? 2 : 1);
     rows.sort((a, b) => rank(a) - rank(b) || b.g.last._end - a.g.last._end);
-    return rows.map(({ id, g, meta }) => {
+    // Finished subagents past the newest FINISHED fold into one line; one that failed always stays.
+    let shown = 0;
+    const folded = [];
+    const kept = rows.filter((r) => {
+      if (rank(r) < 2 || r.g.fails || shown++ < FINISHED) return true;
+      folded.push(r.g);
+      return false;
+    });
+    const lines = kept.map(({ id, g, meta }) => {
       const fallback = fellBack(this.groups, g.last);
       // A subagent with no meta read has an unknown state, so it is never flagged as quiet.
       const live = Boolean(meta && !meta.finished);
@@ -522,6 +531,12 @@ export default class MagpieRouting extends View {
         .child(div().flex_none().whitespace_nowrap().text_color(t.dim).child(`${g.n} req · ${kTok(g.out)}`));
       return g.fails ? v_flex().child(line).child(errLine(t, g.lastFail, 32)) : line;
     });
+    if (!folded.length) return lines;
+    const n = folded.reduce((s, g) => s + g.n, 0), out = folded.reduce((s, g) => s + g.out, 0);
+    return lines.concat(h_flex().pl(16).h(20).gap(6).items_center().overflow_hidden().whitespace_nowrap().text_size(11).text_color(t.dim)
+      .child(div().w(10).flex_none().child("✓"))
+      .child(div().flex_1().min_w(0).truncate().child(`+${folded.length} finished`))
+      .child(div().flex_none().child(`${n} req · ${kTok(out)}`)));
   }
 
   feedRows(t) {

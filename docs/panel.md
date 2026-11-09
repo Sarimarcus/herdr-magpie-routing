@@ -35,6 +35,8 @@ Under each session, one line per agent:
 
 Each line ends with the model that served its latest request (orange with ⚠ when that was a fallback), its failed-request count if any, its request count and its output tokens.
 
+Only the 5 newest finished subagents get a line. Older ones fold into `✓ +N finished`, with their total requests and output tokens. A finished subagent that failed always keeps its own line.
+
 ## Quota
 
 One bar per account window that `magpie accounts --json` reports: 5-hour, 7-day and per-model windows.
