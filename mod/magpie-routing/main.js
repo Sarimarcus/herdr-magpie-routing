@@ -22,7 +22,8 @@ F="$HOME/.config/magpie/usage.jsonl"; off=$1; shift
 S=$(wc -c < "$F" | tr -d ' ')
 if [ "$S" -gt 0 ] && [ "$(tail -c +"$S" "$F" | head -c 1 | od -An -c | tr -d ' ')" != '\\n' ]; then echo "@@usage wait"
 else
-  if [ "$off" -gt 0 ] && [ "$S" -ge "$off" ]; then start=$off; echo "@@usage $S more"
+  # "more" only when the offset still ends a line: else the log rotated and grew past it.
+  if [ "$off" -gt 0 ] && [ "$S" -ge "$off" ] && [ "$(tail -c +"$off" "$F" | head -c 1 | od -An -c | tr -d ' ')" = '\\n' ]; then start=$off; echo "@@usage $S more"
   else start=$(( S > 3000000 ? S - 3000000 : 0 )); echo "@@usage $S all"; fi
   tail -c +$((start + 1)) "$F" | head -c $((S - start)) | tail -n ${KEEP}
 fi
@@ -34,11 +35,11 @@ for s in "$@"; do
     FNR == 1 { if (NR > 1) print ""; n = FILENAME; sub(/.*\\/agent-/, "", n); sub(/\\.meta\\.json$/, "", n); printf "@agent %s %s ", s, n }
     { printf "%s", $0 } END { if (NR) print "" }'
 done`;
-// Session titles: the latest custom or AI title in each transcript. Ids come in as "$@".
+// Session titles: the latest custom or AI title in each transcript, as its JSON field. Ids come in as "$@".
 const TITLES = `${SH_TX}
 for s in "$@"; do
   f=$(tx "$s")
-  [ -n "$f" ] && printf '%s\\t%s\\n' "$s" "$(tac "$f" | grep -m 1 -o '"customTitle":"[^"]*"\\|"aiTitle":"[^"]*"' | cut -d'"' -f4)"
+  [ -n "$f" ] && printf '%s\\t%s\\n' "$s" "$(tac "$f" | grep -m 1 -o '"\\(customTitle\\|aiTitle\\)":"\\([^"\\\\]\\|\\\\.\\)*"')"
 done`;
 const ACCOUNTS = `${SH_MAGPIE}
 echo "@@groups"; "$M" groups 2>/dev/null
@@ -63,7 +64,8 @@ function machine() {
   return space?.machine ?? null;
 }
 
-const sh = (script, on, timeout, args = []) => exec("sh", ["-c", script, "sh", ...args], { on, timeout });
+// exec has a fixed 30 s / 8 MiB limit.
+const sh = (script, on, args = []) => exec("sh", ["-c", script, "sh", ...args], { on });
 
 const modelOf = (m) => (m || "").split("/").pop().replace(/\[.*\]$/, "");
 const servedOf = (r) => modelOf(r.served || r.model);
@@ -228,6 +230,7 @@ export default class MagpieRouting extends View {
     this.sessions = [];
     this.groupStats = new Map();
     this.perMin = 0;
+    this.held = [];
     this.groups = new Map();
     this.accounts = [];
     this.accountsError = null;
@@ -237,13 +240,13 @@ export default class MagpieRouting extends View {
     if (this.busy) return;
     this.busy = true;
     const on = machine();
-    if (on !== this.on) { this.on = on; this.reset(); this.refreshAccounts(cx); }
+    if (on !== this.on) { this.on = on; this.reset(); this.loading = true; this.error = null; this.refreshAccounts(cx); }
     const asked = this.sessions.map(([sid]) => sid);
     cx.spawn(async (cx) => {
       const where = on ?? "this computer";
       let again = false;
       try {
-        const r = await sh(READ, on, 20000, [String(this.offset), ...asked]);
+        const r = await sh(READ, on, [String(this.offset), ...asked]);
         if (on === this.on) {
           const read = parseRead(r.stdout);
           this.error = read.nolog ? `no magpie usage log on ${where}` : null;
@@ -267,9 +270,10 @@ export default class MagpieRouting extends View {
   // needs its transcript details, so the caller reads again at once.
   take(read, asked) {
     if (read.mode === "more" || read.mode === "all") {
-      this.reqs = (read.mode === "more" ? this.reqs.concat(read.rows) : read.rows).slice(-KEEP);
+      this.reqs = (this.offset > 0 ? this.reqs.concat(read.rows) : read.rows).slice(-KEEP);
+      // Only the first read sets the baseline; a later full read is a rotated log, whose rows are new.
+      if (this.offset > 0) this.alert(read.rows);
       this.offset = read.size;
-      if (read.mode === "more") this.alert(read.rows);
     }
     for (const [sid, cwd] of read.cwds) this.cwds.set(sid, cwd);
     for (const sid of asked) this.looked.add(sid);
@@ -281,8 +285,10 @@ export default class MagpieRouting extends View {
     return this.sessions.some(([sid]) => !this.looked.has(sid));
   }
 
-  // Toasts for new requests that failed or fell back. A full read only sets the baseline.
+  // Toasts for new requests that failed or fell back. Held until the groups are known: a fallback
+  // is judged against the group's first member.
   alert(rows) {
+    if (!this.groups.size) { this.held = this.held.concat(rows).slice(-KEEP); return; }
     for (const r of rows) {
       const kind = failed(r) ? "error" : fellBack(this.groups, r) ? "fallback" : null;
       if (!kind) continue;
@@ -302,7 +308,7 @@ export default class MagpieRouting extends View {
     cx.spawn(async (cx) => {
       let accounts = [], groups = null, error = null;
       try {
-        const out = (await sh(ACCOUNTS, on, 30000)).stdout;
+        const out = (await sh(ACCOUNTS, on)).stdout;
         const i = out.indexOf("@@accounts\n");
         groups = parseGroups(i < 0 ? out : out.slice(0, i));
         const json = i < 0 ? "" : out.slice(i + 11).trim();
@@ -313,6 +319,7 @@ export default class MagpieRouting extends View {
       this.accounts = accounts;
       this.accountsError = error;
       if (groups) this.groups = groups;
+      if (this.groups.size && this.held.length) this.alert(this.held.splice(0));
       cx.notify();
     });
   }
@@ -333,10 +340,13 @@ export default class MagpieRouting extends View {
     const on = this.on;
     cx.spawn(async (cx) => {
       try {
-        const r = await sh(TITLES, on, 20000, ids);
+        const r = await sh(TITLES, on, ids);
         for (const line of r.stdout.split("\n")) {
-          const [sid, title] = line.split("\t");
-          if (sid) this.titles.set(sid, title || "");
+          const [sid, field] = line.split("\t");
+          if (!sid) continue;
+          let title = "";
+          try { title = String(Object.values(JSON.parse(`{${field}}`))[0] ?? ""); } catch {}
+          this.titles.set(sid, title);
         }
       } catch {}
       this.titling = false;
