@@ -1,86 +1,66 @@
 # herdr-magpie-routing
 
-A live view of [magpie](https://usemagpie.ai/) ([GitHub](https://github.com/yetone/magpie)) model routing inside [Herdr](https://herdr.dev/) ([GitHub](https://github.com/herdrdev)). It shows which coding-agent sessions are running, what each agent and subagent is doing, which model served them, and how much quota is left.
+**See which model is actually answering your coding agents, live, from inside your terminal workspace.**
 
-It reads magpie's own files on the machine where magpie runs. It needs no gateway key and changes nothing.
+A panel for [Herdr](https://herdr.dev/) ([GitHub](https://github.com/herdrdev)) that shows what [magpie](https://usemagpie.ai/) ([GitHub](https://github.com/yetone/magpie)) is doing with your requests: every Claude Code session and subagent, the model that served it, fallbacks, cache hits and how much quota is left.
 
-There are two parts:
+<p align="center">
+  <img src="docs/images/panel.png" alt="The Magpie panel: sessions with their subagents, quota bars, latest requests and group fallback chains" width="460">
+  <br><sub>Mock render of the panel from real usage data, with session titles replaced. Herdr's own styling differs slightly.</sub>
+</p>
 
-- **Desktop panel** (`mod/magpie-routing`): a Herdr desktop-app mod. A **Magpie** button sits next to Files and Changes in the right-hand panel.
-- **Terminal view** (`bin/view.js`): a Herdr plugin that opens the same data in a terminal tab.
+## Why
 
-## What the panel shows
+magpie routes each request to a group of models with fallbacks. That's great until you wonder: *is this session on Opus or did it fall back? Why is it slow? How close am I to the 5-hour limit?* The answers are all in magpie's log, but not where you're looking. This panel puts them next to your panes.
 
-| Section | Contents |
-|---|---|
-| **Sessions** (last 30 min) | One row per Claude Code session, with its title, how full its context window is and when it last made a request. Under each session, one line per agent: the main agent, then running subagents, then finished ones, each with its model, request count and output tokens. ✕ means the agent's last request failed. ◌ means a running subagent has been silent for 5 minutes. Click a session to focus its Herdr pane. |
-| **Quota** | One usage bar per account window (5 hours, 7 days, per model). Each bar shows the reset time and the pace: "on pace", or when the window runs out at the current rate. |
-| **Latest requests** | The last 10 requests: the group or model asked for, the model that served it, context → output tokens, and duration. |
-| **Groups** (last hour) | Each group's fallback chain with the model that served last highlighted (⚠ when it was not the first member), plus request count, cache-hit share and median time to first token. |
+- **Sessions:** each Claude Code session with its title, context fill and every subagent, its model, requests and output tokens. Click to jump to its pane.
+- **Quota:** one bar per account window, with reset time and whether you're on pace.
+- **Latest requests:** group asked → model served, context → output tokens, duration.
+- **Groups:** each fallback chain with the last-served model highlighted, cache-hit share and time to first token.
+- **Toasts** when a request fails or a group falls back.
 
-The header shows how many sessions were active in the last 5 minutes and the request rate, averaged over 5 minutes.
+It only reads magpie's files on the machine where magpie runs. No gateway key, no proxy, nothing written.
 
-The panel also raises a toast when a request fails or a group falls back to its next member, at most once per group and kind every 10 minutes. A request that is cancelled (499) or handed on to the group's next member does not count as a failure.
+## Quick start
 
-## Data sources
+You need [Herdr](https://herdr.dev/), [magpie](https://usemagpie.ai/) routing your agents, and Node 18+ on the magpie machine.
 
-All of these are read on the magpie machine:
+```sh
+git clone https://github.com/Sarimarcus/herdr-magpie-routing ~/dev/tools/herdr-magpie-routing
+```
 
-- `~/.config/magpie/usage.jsonl`: one line per request. After the first read, the panel fetches only the lines added since its last read.
-- `magpie groups` and `magpie accounts --json`, every 60 s.
-- Claude Code transcripts in `~/.claude/projects/*/<session>.jsonl`, for each session's title and working directory, and `<session>/subagents/agent-*.meta.json`, for each subagent's type, description and whether it has finished. Only sessions active in the last 30 minutes are read.
-
-## Install
-
-### Desktop panel (Windows, magpie on a remote machine)
-
-Herdr must already know the remote machine (Settings › Machines). Copy the installer from the remote machine and run it:
+**Herdr desktop app (Windows), magpie on a remote machine:**
 
 ```powershell
 scp you@your-vps:dev/tools/herdr-magpie-routing/install-windows.ps1 .
-powershell -ExecutionPolicy Bypass -File install-windows.ps1 -Vps you@your-vps [-Machine vps]
+powershell -ExecutionPolicy Bypass -File install-windows.ps1 -Vps you@your-vps -Machine vps
 ```
 
-The installer:
+A **Magpie** button appears next to Files and Changes in the right-hand panel.
 
-1. copies the mod into the app's `mods` folder and sets `MACHINE` in `main.js` to `-Machine`;
-2. clones the read-only `main` layout and `tabs` mod to `my-main` and `my-tabs`, if they don't exist yet;
-3. adds the panel block to `my-main.json` and the **Magpie** button to `my-tabs`, keeping `.bak` copies of both;
-4. checks both mods with `herdr-app check` and switches to the `my-main` layout.
-
-To pick up a new version, run it again. If the copy fails because the app has the mod open, quit herdr-app and run it again. If the window breaks, Ctrl+Alt+Shift+Escape returns to the default layout.
-
-### Terminal view (Linux, macOS)
+**Herdr terminal (Linux, macOS):**
 
 ```sh
 herdr plugin link ~/dev/tools/herdr-magpie-routing
 ```
 
-Then run the **Open magpie routing tab** action. To see it outside Herdr, run `node bin/view.js`, or `node bin/view.js --once` to print it once. It needs Node 18 or later. `bin/run.sh` also finds Node installed by nvm.
+Then run the **Open magpie routing tab** action. Or skip Herdr entirely: `node bin/view.js`.
 
-## Configuration
+## Docs
 
-| Setting | Where | Default |
-|---|---|---|
-| Machine magpie runs on | `MACHINE` in `mod/magpie-routing/main.js` (the installer sets it) | `"vps"`. `undefined` follows the space being shown. |
-| magpie binary | `~/.local/bin/magpie`, else `magpie` on `PATH`. The terminal view also reads `MAGPIE_BIN`. | |
-| magpie config folder (terminal view) | `MAGPIE_CONFIG_DIR` | `~/.config/magpie` |
-
-The thresholds are constants at the top of `main.js`: `FEED`, `ACTIVE_MS`, `QUIET_MS`, `SESSION_WINDOW_MS` and `ALERT_EVERY_MS`.
-
-## Development
-
-`mod/magpie-routing/gpui-kit.d.ts` holds the mod API types. Check a change with:
-
-```sh
-node --check mod/magpie-routing/main.js
-herdr-app check mod/magpie-routing
-```
-
-`herdr-app check` does not catch methods called with the wrong number of arguments: `flex_shrink()`, for example, needs a number and only fails at render time.
+- [Install](docs/install.md): both installers in detail, updating, uninstalling
+- [Reading the panel](docs/panel.md): every section, symbol and colour
+- [Configuration](docs/install.md#configuration): machine, binary, thresholds
+- [Troubleshooting](docs/troubleshooting.md)
+- [Contributing](CONTRIBUTING.md) · [Changelog](CHANGELOG.md)
 
 ## Limits
 
 - The context bar guesses each session's window: 1M if a subagent ran on a `[1m]` model or the context has passed 200k, else 200k. Non-Claude models show a token count without a bar.
 - Sessions are matched to Herdr panes by terminal title. A session whose title is shared with another pane is not clickable.
 - Group chains are parsed from the text output of `magpie groups`, which has no JSON option.
+- The desktop installer is Windows-only for now. The mod itself is platform-neutral: see [Install](docs/install.md#other-desktop-platforms).
+
+## License
+
+[MIT](LICENSE). Not affiliated with Herdr or magpie.
