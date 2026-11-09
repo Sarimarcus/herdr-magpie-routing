@@ -6,7 +6,7 @@ A panel for [Herdr](https://herdr.dev/) ([GitHub](https://github.com/herdrdev)) 
 
 <p align="center">
   <img src="docs/images/panel.png" alt="The Magpie panel: sessions with their subagents, quota bars, latest requests and group fallback chains" width="460">
-  <br><sub>Mock render of the panel from real usage data, with session titles replaced. Herdr's own styling differs slightly.</sub>
+  <br><sub>Mock render of the panel from real usage data, with session titles replaced and the error message shortened. Herdr's own styling differs slightly.</sub>
 </p>
 
 ## Why
