@@ -281,13 +281,13 @@ export default class MagpieRouting extends View {
       const fallback = ref.startsWith("group/") && first && served !== first;
       const running = !id || !meta?.finished;
       const name = !id ? "main" : meta ? `${meta.agentType || "agent"}${meta.description ? ` · ${meta.description}` : ""}` : `subagent ${id.slice(0, 7)}`;
-      return h_flex().pl(16).gap(6).items_center().text_size(11)
+      return h_flex().pl(16).h(20).gap(6).items_center().overflow_hidden().whitespace_nowrap().text_size(11)
         .child(div().w(10).flex_none().text_color(running ? t.ansi2 : t.dim).child(!id ? "▸" : running ? "●" : "✓"))
         .child(div().flex_1().min_w(0).truncate().text_color(running ? t.foreground : t.dim).child(name))
-        .child(div().flex_none().text_color(fallback ? t.blocked : t.muted)
-          .child(`${groupName(ref)} · ${shortModel(served)}${fallback ? " ⚠" : ""}`))
+        .child(div().flex_shrink().min_w(0).truncate().text_color(fallback ? t.blocked : t.muted)
+          .child(`${shortModel(served)}${fallback ? " ⚠" : ""}`))
         .when(Boolean(g.fails), (e) => e.child(div().flex_none().text_color(t.ansi1).child(`${g.fails} err`)))
-        .child(div().w(70).flex_none().text_color(t.dim).child(`${g.n} req · ${kTok(g.out)}`));
+        .child(div().flex_none().whitespace_nowrap().text_color(t.dim).child(`${g.n} req · ${kTok(g.out)}`));
     });
   }
 
