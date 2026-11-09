@@ -165,9 +165,11 @@ export default class MagpieRouting extends View {
     });
   }
 
-  section(t, title, extra) {
-    return h_flex().px(14).pt(12).pb(4).gap(6).items_center()
-      .child(div().font_semibold().child(title))
+  // Each section after the first opens with a full-width rule and a tinted title bar.
+  section(t, title, extra, first = false) {
+    return h_flex().mt(first ? 0 : 10).px(14).py(6).gap(6).items_center().bg(t.raised)
+      .when(!first, (e) => e.border_t(1).border_color(t.border))
+      .child(div().font_semibold().child(title.toUpperCase()))
       .when(Boolean(extra), (e) => e.child(div().text_size(11).text_color(t.dim).child(extra)));
   }
 
@@ -217,7 +219,7 @@ export default class MagpieRouting extends View {
       const members = (this.groups.get(ref)?.members || []).map(modelOf);
       const g = byGroup.get(ref), served = g?.last ? modelOf(g.last.served) : null;
       const chain = members.length ? members : served ? [served] : [];
-      return v_flex().id(`g-${ref}`).mx(14).py(6).gap(2).when(i > 0, (e) => e.border_t(1).border_color(t.border))
+      return v_flex().id(`g-${ref}`).px(14).py(3).gap(1)
         .child(h_flex().gap(8).items_center()
           .child(div().flex_1().min_w(0).truncate().child(groupName(ref)))
           .when(Boolean(g?.fails), (e) => e.child(div().text_size(11).text_color(t.ansi1).child(`${g.fails} err`)))
@@ -258,7 +260,7 @@ export default class MagpieRouting extends View {
     return sessions.map(([sid, s], i) => {
       const age = Date.now() - new Date(s.last.t);
       const dot = age < 60_000 ? t.ansi2 : age < 300_000 ? t.ansi3 : t.raised;
-      return v_flex().id(`s-${sid}`).mx(14).py(6).gap(2).when(i > 0, (e) => e.border_t(1).border_color(t.border))
+      return v_flex().id(`s-${sid}`).px(14).py(4).gap(1)
         .child(h_flex().gap(8).items_center()
           .child(div().w(8).h(8).rounded(4).flex_none().bg(dot))
           .child(div().flex_1().min_w(0).truncate().font_semibold().child(this.sessionLabel(sid)))
@@ -313,7 +315,7 @@ export default class MagpieRouting extends View {
       : this.loading
         ? [div().p(14).text_color(t.dim).child("Loading magpie…")]
         : [
-            this.section(t, "Sessions", "last 30 min"), ...this.sessionRows(t, sessions),
+            this.section(t, "Sessions", "last 30 min", true), ...this.sessionRows(t, sessions),
             this.section(t, "Quota"), ...this.quotaRows(t),
             this.section(t, "Latest requests", "context → output tokens"), ...this.feedRows(t),
             this.section(t, "Groups", "last hour · ⚠ = fallback"), ...this.groupRows(t),
