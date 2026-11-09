@@ -12,7 +12,11 @@ U=$(tail -n 1500 "$HOME/.config/magpie/usage.jsonl" 2>/dev/null)
 echo "@@usage"; printf '%s\\n' "$U"
 echo "@@sessions"; printf '%s\\n' "$U" | grep -o '"session":"[^"]*"' | sort -u | cut -d'"' -f4 | while read -r s; do
   f=$(ls "$HOME"/.claude/projects/*/"$s".jsonl 2>/dev/null | head -n 1)
-  [ -n "$f" ] && echo "$s $(grep -m 1 -o '"cwd":"[^"]*"' "$f" | cut -d'"' -f4)"
+  [ -n "$f" ] || continue
+  echo "$s $(grep -m 1 -o '"cwd":"[^"]*"' "$f" | cut -d'"' -f4)"
+  for m in $(ls -t "\${f%.jsonl}"/subagents/*.meta.json 2>/dev/null | head -n 25); do
+    a=\${m##*/agent-}; echo "@agent $s \${a%.meta.json} $(head -c 2000 "$m")"
+  done
 done`;
 // Session titles: the latest custom or AI title in each transcript. Ids come in as "$@".
 const TITLES = `for s in "$@"; do
@@ -57,7 +61,7 @@ function resetIn(iso) {
 }
 
 function parse(stdout) {
-  const groups = new Map(), reqs = [], cwds = new Map();
+  const groups = new Map(), reqs = [], cwds = new Map(), agents = new Map();
   let section = "";
   for (const line of stdout.split("\n")) {
     if (line.startsWith("@@")) { section = line.slice(2); continue; }
@@ -66,12 +70,15 @@ function parse(stdout) {
       if (m) groups.set(m[1], { routing: m[2], members: m[3].replace(/\s+←.*$/, "").split("→").map((s) => s.trim()) });
     } else if (section === "usage" && line) {
       try { reqs.push(JSON.parse(line)); } catch {}
+    } else if (section === "sessions" && line.startsWith("@agent ")) {
+      const [, sid, id, ...json] = line.split(" ");
+      try { agents.set(`${sid}/${id}`, JSON.parse(json.join(" "))); } catch {}
     } else if (section === "sessions" && line) {
       const i = line.indexOf(" ");
       if (i > 0) cwds.set(line.slice(0, i), line.slice(i + 1));
     }
   }
-  return { groups, reqs, cwds };
+  return { groups, reqs, cwds, agents };
 }
 
 export default class MagpieRouting extends View {
@@ -80,6 +87,7 @@ export default class MagpieRouting extends View {
     this.reqs = [];
     this.cwds = new Map();
     this.titles = new Map();
+    this.agents = new Map();
     this.accounts = [];
     this.accountsError = null;
     this.accountsSeq = 0;
@@ -103,7 +111,8 @@ export default class MagpieRouting extends View {
       try {
         const r = await exec("sh", ["-c", READ], { on, timeout: 20000 });
         if (on === this.on) {
-          const { groups, reqs, cwds } = parse(r.stdout);
+          const { groups, reqs, cwds, agents } = parse(r.stdout);
+          this.agents = agents;
           this.groups = groups;
           this.reqs = reqs;
           this.cwds = cwds;
@@ -232,12 +241,12 @@ export default class MagpieRouting extends View {
     const since = Date.now() - SESSION_WINDOW_MS, bySession = new Map();
     for (const r of this.reqs) {
       if (!r.session || new Date(r.t) < since) continue;
-      const s = bySession.get(r.session) || { last: null, groups: new Map() };
-      const key = r.req || r.model || "?";
-      const g = s.groups.get(key) || { n: 0, out: 0, fails: 0, last: null };
+      const s = bySession.get(r.session) || { last: null, agents: new Map() };
+      const key = r.subagent || "";
+      const g = s.agents.get(key) || { n: 0, out: 0, fails: 0, last: null };
       g.n++; g.out += r.out || 0; g.last = r;
       if (r.status && r.status !== 200) g.fails++;
-      s.groups.set(key, g);
+      s.agents.set(key, g);
       s.last = r;
       bySession.set(r.session, s);
     }
@@ -254,17 +263,29 @@ export default class MagpieRouting extends View {
           .child(div().w(8).h(8).rounded(4).flex_none().bg(dot))
           .child(div().flex_1().min_w(0).truncate().font_semibold().child(this.sessionLabel(sid)))
           .child(div().flex_none().text_size(11).text_color(t.dim).child(ago(s.last.t))))
-        .children([...s.groups].map(([ref, g]) => {
-          const served = modelOf(g.last.served || g.last.model);
-          const first = modelOf((this.groups.get(ref)?.members || [])[0]);
-          const fallback = ref.startsWith("group/") && first && served !== first;
-          return h_flex().pl(16).gap(6).items_center().text_size(11)
-            .child(div().w(90).flex_none().truncate().text_color(t.muted).child(groupName(ref)))
-            .child(div().flex_1().min_w(0).truncate().text_color(fallback ? t.blocked : t.foreground)
-              .child(shortModel(served) + (fallback ? " ⚠ fallback" : "")))
-            .when(Boolean(g.fails), (e) => e.child(div().flex_none().text_color(t.ansi1).child(`${g.fails} err`)))
-            .child(div().flex_none().text_color(t.dim).child(`${g.n} req · ${kTok(g.out)} out`));
-        }));
+        .children(this.agentLines(t, sid, s.agents));
+    });
+  }
+
+  // One line per agent in a session: the main agent first, then running subagents, then finished ones.
+  agentLines(t, sid, agents) {
+    const rows = [...agents].map(([id, g]) => ({ id, g, meta: id ? this.agents.get(`${sid}/${id}`) : null }));
+    const rank = (r) => (!r.id ? 0 : r.meta?.finished ? 2 : 1);
+    rows.sort((a, b) => rank(a) - rank(b) || new Date(b.g.last.t) - new Date(a.g.last.t));
+    return rows.map(({ id, g, meta }) => {
+      const ref = g.last.req || g.last.model || "";
+      const served = modelOf(g.last.served || g.last.model);
+      const first = modelOf((this.groups.get(ref)?.members || [])[0]);
+      const fallback = ref.startsWith("group/") && first && served !== first;
+      const running = !id || !meta?.finished;
+      const name = !id ? "main" : meta ? `${meta.agentType || "agent"}${meta.description ? ` · ${meta.description}` : ""}` : `subagent ${id.slice(0, 7)}`;
+      return h_flex().pl(16).gap(6).items_center().text_size(11)
+        .child(div().w(10).flex_none().text_color(running ? t.ansi2 : t.dim).child(!id ? "▸" : running ? "●" : "✓"))
+        .child(div().flex_1().min_w(0).truncate().text_color(running ? t.foreground : t.dim).child(name))
+        .child(div().flex_none().text_color(fallback ? t.blocked : t.muted)
+          .child(`${groupName(ref)} · ${shortModel(served)}${fallback ? " ⚠" : ""}`))
+        .when(Boolean(g.fails), (e) => e.child(div().flex_none().text_color(t.ansi1).child(`${g.fails} err`)))
+        .child(div().w(70).flex_none().text_color(t.dim).child(`${g.n} req · ${kTok(g.out)}`));
     });
   }
 
