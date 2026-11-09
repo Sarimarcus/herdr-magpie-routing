@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.0 (2026-11-09)
 
 - A line under the header shows the magpie machine's load per core, RAM in use and free disk, yellow and red past set thresholds (Linux only).
 - A session lists its 5 newest finished subagents; the rest fold into one `✓ +N finished` line with their requests and output tokens. A finished subagent that failed is always listed.
