@@ -36,11 +36,24 @@ for s in "$@"; do
     { printf "%s", $0 } END { if (NR) print "" }'
 done`;
 // Session titles: the latest custom or AI title in each transcript, as its JSON field. Ids come in as "$@".
+// A headless run (claude -p) has none: its first prompt comes back as "headless" instead.
 const TITLES = `${SH_TX}
 for s in "$@"; do
   f=$(tx "$s")
-  [ -n "$f" ] && printf '%s\\t%s\\n' "$s" "$(tac "$f" | grep -m 1 -o '"\\(customTitle\\|aiTitle\\)":"\\([^"\\\\]\\|\\\\.\\)*"')"
+  [ -n "$f" ] || continue
+  t=$(tac "$f" | grep -m 1 -o '"\\(customTitle\\|aiTitle\\)":"\\([^"\\\\]\\|\\\\.\\)*"')
+  if [ -z "$t" ] && head -n 50 "$f" | grep -q '"entrypoint":"sdk-cli"'; then
+    t=$(grep -m 1 -o '"role":"user","content":"\\([^"\\\\]\\|\\\\.\\)*"' "$f" | sed 's/^"role":"user","content"/"headless"/')
+    t=\${t:-'"headless":""'}
+  fi
+  printf '%s\\t%s\\n' "$s" "$t"
 done`;
+// A slash command reads as "/cmd args", any other prompt as its first line.
+function headlessLabel(prompt) {
+  const cmd = prompt.match(/<command-name>([^<]*)<\/command-name>/);
+  const args = prompt.match(/<command-args>([^<]*)<\/command-args>/);
+  return `headless · ${cmd ? `${cmd[1]} ${args?.[1] ?? ""}`.trim() : prompt.trim().split("\n")[0] || "claude -p"}`;
+}
 const ACCOUNTS = `${SH_MAGPIE}
 echo "@@groups"; "$M" groups 2>/dev/null
 echo "@@accounts"; "$M" accounts --json 2>/dev/null`;
@@ -345,7 +358,10 @@ export default class MagpieRouting extends View {
           const [sid, field] = line.split("\t");
           if (!sid) continue;
           let title = "";
-          try { title = String(Object.values(JSON.parse(`{${field}}`))[0] ?? ""); } catch {}
+          try {
+            const [k, v] = Object.entries(JSON.parse(`{${field}}`))[0] ?? [];
+            title = k === "headless" ? headlessLabel(String(v)) : String(v ?? "");
+          } catch {}
           this.titles.set(sid, title);
         }
       } catch {}

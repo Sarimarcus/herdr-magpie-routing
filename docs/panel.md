@@ -18,7 +18,7 @@ One block per Claude Code session that made a request in the last 30 minutes, ne
 |---|---|
 | ● green / yellow / grey | Last request under a minute ago, under 5 minutes ago, older |
 | ● red | One of the session's agents failed its last request |
-| Title | The session's Claude Code title (custom title, else the AI-generated one) |
+| Title | The session's Claude Code title (custom title, else the AI-generated one). A headless `claude -p` run, such as a cron job, has none and reads `headless · <slash command or first prompt line>` |
 | ↗ | The session is open in a Herdr pane: click to focus it |
 | `126k/1M` bar | Context used in the latest request against the guessed window (see Limits in the README) |
 | `20s ago` | Time since the session's last request |

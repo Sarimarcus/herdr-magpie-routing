@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Headless `claude -p` sessions are labelled `headless · <command or first prompt line>` instead of `folder · id`.
+
 ## 0.1.0 (2026-11-09)
 
 First public release.
