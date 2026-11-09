@@ -204,11 +204,11 @@ export default class MagpieRouting extends View {
   groupRows(t) {
     const byGroup = this.groupStats(Date.now() - 3.6e6);
     const refs = [...new Set([...this.groups.keys(), ...byGroup.keys()])].sort();
-    return refs.map((ref) => {
+    return refs.map((ref, i) => {
       const members = (this.groups.get(ref)?.members || []).map(modelOf);
       const g = byGroup.get(ref), served = g?.last ? modelOf(g.last.served) : null;
       const chain = members.length ? members : served ? [served] : [];
-      return v_flex().id(`g-${ref}`).px(14).py(3).gap(1)
+      return v_flex().id(`g-${ref}`).mx(14).py(6).gap(2).when(i > 0, (e) => e.border_t(1).border_color(t.border))
         .child(h_flex().gap(8).items_center()
           .child(div().flex_1().min_w(0).truncate().child(groupName(ref)))
           .when(Boolean(g?.fails), (e) => e.child(div().text_size(11).text_color(t.ansi1).child(`${g.fails} err`)))
@@ -246,10 +246,10 @@ export default class MagpieRouting extends View {
 
   sessionRows(t, sessions) {
     if (!sessions.length) return [div().px(14).h(22).text_color(t.dim).child("no session active in the last 30 min")];
-    return sessions.map(([sid, s]) => {
+    return sessions.map(([sid, s], i) => {
       const age = Date.now() - new Date(s.last.t);
       const dot = age < 60_000 ? t.ansi2 : age < 300_000 ? t.ansi3 : t.raised;
-      return v_flex().id(`s-${sid}`).px(14).py(4).gap(1)
+      return v_flex().id(`s-${sid}`).mx(14).py(6).gap(2).when(i > 0, (e) => e.border_t(1).border_color(t.border))
         .child(h_flex().gap(8).items_center()
           .child(div().w(8).h(8).rounded(4).flex_none().bg(dot))
           .child(div().flex_1().min_w(0).truncate().font_semibold().child(this.sessionLabel(sid)))
