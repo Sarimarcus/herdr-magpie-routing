@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.2.1 (2026-11-09)
+
 - A session with no transcript reads `no transcript · <id>` instead of `? · <id>`.
 
 ## 0.2.0 (2026-11-09)
