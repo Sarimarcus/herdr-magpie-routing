@@ -552,17 +552,20 @@ export default class MagpieRouting extends View {
   }
 
   // Yellow and red past SYS_WARN's thresholds: load per core, RAM used, disk share free.
+  // Bars fill with load per core (full at 1 per core), RAM used and disk used.
   sysStats(t) {
     const { load, cores, ram, diskFree, diskShare } = this.sys;
-    const col = (bad, worse) => (worse ? t.ansi1 : bad ? t.ansi3 : t.dim);
-    const stat = (text, c) => div().flex_none().text_color(c).child(text);
-    return h_flex().gap(4).items_center().text_size(11).whitespace_nowrap()
-      .child(stat(`load ${load.toFixed(1)}/${cores}`, col(load / cores >= SYS_WARN.load[0], load / cores >= SYS_WARN.load[1])))
-      .child(stat("·", t.dim))
-      .child(stat(`ram ${Math.round(ram * 100)}%`, col(ram >= SYS_WARN.ram[0], ram >= SYS_WARN.ram[1])))
-      .child(stat("·", t.dim))
-      .child(stat(`disk ${Math.round(diskFree / 1048576)}G free`, col(diskShare <= SYS_WARN.disk[0], diskShare <= SYS_WARN.disk[1])))
-      .child(stat("·", t.dim));
+    const perCore = load / cores;
+    const stat = (text, fill, bad, worse) => {
+      const c = worse ? t.ansi1 : bad ? t.ansi3 : t.ansi2;
+      return h_flex().flex_1().min_w(0).gap(6).items_center()
+        .child(div().flex_none().text_color(bad || worse ? c : t.dim).child(text))
+        .child(bar(t, Math.min(100, Math.round(fill * 100)), c, 5).flex_1().min_w(24));
+    };
+    return h_flex().w_full().gap(16).items_center().text_size(11).whitespace_nowrap()
+      .child(stat(`load ${load.toFixed(1)}/${cores}`, perCore, perCore >= SYS_WARN.load[0], perCore >= SYS_WARN.load[1]))
+      .child(stat(`ram ${Math.round(ram * 100)}%`, ram, ram >= SYS_WARN.ram[0], ram >= SYS_WARN.ram[1]))
+      .child(stat(`disk ${Math.round(diskFree / 1048576)}G free`, 1 - diskShare, diskShare <= SYS_WARN.disk[0], diskShare <= SYS_WARN.disk[1]));
   }
 
   feedRows(t) {
@@ -620,8 +623,9 @@ export default class MagpieRouting extends View {
         .child(div().px(5).py(1).rounded(4).border_1().border_color(t.border).text_size(10).text_color(t.muted)
           .child(this.on ?? "local"))
         .child(div().flex_1())
-        .when(this.sys, (e) => e.child(this.sysStats(t)))
         .child(div().text_size(11).text_color(t.dim).child(`${active} active · ${perMin} req/min`)))
+      .when(this.sys, (e) => e.child(h_flex().h(24).flex_none().px(14).items_center().border_b(1).border_color(t.border)
+        .child(this.sysStats(t))))
       .child(v_flex().id("magpie-body").flex_1().min_h(0).overflow_y_scrollbar().children(body));
   }
 }

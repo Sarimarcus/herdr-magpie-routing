@@ -6,11 +6,14 @@
 
 ## Header
 
-`Magpie [vps]   load 1.2/8 · ram 63% · disk 41G free · 2 active · 12 req/min`
+```
+Magpie [vps]                       2 active · 12 req/min
+load 1.2/8 · ram 63% · disk 41G free
+```
 
-The machine being read, its health, the number of sessions that made a request in the last 5 minutes, and the request rate averaged over those 5 minutes.
+The machine being read, the number of sessions that made a request in the last 5 minutes, and the request rate averaged over those 5 minutes.
 
-Health is read every 60 seconds on a Linux magpie machine (hidden elsewhere):
+The second line is the machine's health, read every 60 seconds on a Linux magpie machine (the line is hidden elsewhere). Each figure has a bar: load per core (full at 1 per core), RAM used and disk used. Bars are green, then yellow and red past these thresholds:
 
 - **load:** the 1-minute load average over the core count. Yellow from 1 per core, red from 1.5.
 - **ram:** memory in use, from `MemAvailable`. Yellow from 80%, red from 90%.
