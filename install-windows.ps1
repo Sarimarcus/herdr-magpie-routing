@@ -42,7 +42,7 @@ Write-Host "Copying the mod from $Vps ..."
 $stage = Join-Path $env:TEMP "magpie-routing-$PID"
 Remove-Item $stage -Recurse -Force -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Path $stage | Out-Null
-scp -r "${Vps}:dev/herdr-magpie-routing/mod/magpie-routing" "$stage"
+scp -r "${Vps}:dev/tools/herdr-magpie-routing/mod/magpie-routing" "$stage"
 if ($LASTEXITCODE -ne 0) { Fail "scp failed." }
 New-Item -ItemType Directory -Path (Join-Path $mods "magpie-routing") -Force | Out-Null
 try {
