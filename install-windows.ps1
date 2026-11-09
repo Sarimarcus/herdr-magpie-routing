@@ -1,6 +1,6 @@
 # Installs the magpie-routing mod into the local Herdr desktop app and adds a
 # "Magpie" button next to Files and Changes.
-# Usage:  powershell -ExecutionPolicy Bypass -File install-windows.ps1 -Vps olivier@your-vps [-Machine vps]
+# Usage:  powershell -ExecutionPolicy Bypass -File install-windows.ps1 -Vps you@your-vps [-Machine vps]
 # -Machine: the name Herdr gives the VPS (Settings > Machines), where magpie runs.
 param(
   [Parameter(Mandatory = $true)][string]$Vps,
