@@ -305,7 +305,9 @@ export default class MagpieRouting extends View {
   render(_cx) {
     const t = theme();
     const sessions = this.loading || this.error ? [] : this.activeSessions();
-    const perMin = this.reqs.filter((r) => Date.now() - new Date(r.t) < 60_000).length;
+    // 5-minute average: a 60 s window reads 0 between bursts of a working session.
+    const perMin = this.reqs.filter((r) => Date.now() - new Date(r.t) < 300_000).length / 5;
+    const active = sessions.filter(([, s]) => Date.now() - new Date(s.last.t) < 300_000).length;
     const body = this.error
       ? [div().p(14).text_color(t.ansi1).child(this.error)]
       : this.loading
@@ -325,7 +327,7 @@ export default class MagpieRouting extends View {
         .child(div().px(5).py(1).rounded(4).border_1().border_color(t.border).text_size(10).text_color(t.muted)
           .child(this.on ?? "local"))
         .child(div().flex_1())
-        .child(div().text_size(11).text_color(t.dim).child(`${sessions.length} active · ${perMin} req/min`)))
+        .child(div().text_size(11).text_color(t.dim).child(`${active} active · ${perMin < 10 ? perMin.toFixed(1) : Math.round(perMin)} req/min`)))
       .child(div().flex_1().min_h(0).relative()
         .child(v_flex().id("magpie-body").absolute().inset_0().overflow_y_scroll().children(body))
         .child(Scrollbar.vertical("magpie-body").absolute().inset_0()));
