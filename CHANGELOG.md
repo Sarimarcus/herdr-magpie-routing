@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- A session with no transcript reads `no transcript · <id>` instead of `? · <id>`.
+
 ## 0.2.0 (2026-11-09)
 
 - Headless `claude -p` sessions are labelled `headless · <command or first prompt line>` instead of `folder · id`.

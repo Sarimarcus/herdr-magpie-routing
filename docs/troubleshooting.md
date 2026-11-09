@@ -13,7 +13,7 @@ They come from `magpie accounts --json` and `magpie groups`, run every 60 second
 
 ## A session shows `folder · id` instead of its title
 
-Titles come from the Claude Code transcript in `~/.claude/projects/*/<session>.jsonl` on the magpie machine. A session that runs on another machine, or hasn't been given a title yet, shows its working folder and short id.
+Titles come from the Claude Code transcript in `~/.claude/projects/*/<session>.jsonl` on the magpie machine. A session that runs on another machine, or hasn't been given a title yet, shows its working folder and short id. With no transcript at all, for example a `claude` process that exited before writing one, it shows `no transcript · <id>`.
 
 ## A session isn't clickable
 

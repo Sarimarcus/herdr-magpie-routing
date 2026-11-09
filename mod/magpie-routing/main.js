@@ -436,7 +436,7 @@ export default class MagpieRouting extends View {
   sessionLabel(sid) {
     const cwd = this.cwds.get(sid) || "", parent = cwd.match(SCRATCH);
     if (parent) return `↳ ${this.titles.get(parent[1]) || parent[1].slice(0, 8)}`;
-    return this.titles.get(sid) || `${cwd.split("/").filter(Boolean).pop() || "?"} · ${sid.slice(0, 8)}`;
+    return this.titles.get(sid) || `${cwd.split("/").filter(Boolean).pop() || "no transcript"} · ${sid.slice(0, 8)}`;
   }
 
   // Herdr agents by normalised terminal title (Claude Code titles its terminal with the session title).
