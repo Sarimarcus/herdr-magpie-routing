@@ -1,6 +1,6 @@
 import { View, div } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
-import { spaces, focused, exec, theme, settings, machines, agents as herdrAgents, run, notify } from "herdr";
+import { spaces, focused, exec, theme, settings, machines, agents as herdrAgents, run, notify, setShared } from "herdr";
 
 // The Herdr machine magpie runs on. undefined follows the shown space, as Changes does.
 const MACHINE = "vps";
@@ -12,7 +12,9 @@ const KEEP = 1500;                       // log lines kept in memory
 const ACTIVE_MS = 5 * 60 * 1000;         // "active" and req/min in the header
 const QUIET_MS = 5 * 60 * 1000;          // a running subagent silent this long is flagged
 const SESSION_WINDOW_MS = 30 * 60 * 1000;
-const HEADLESS_IDLE_MS = 10 * 60 * 1000;  // a headless run (claude -p) this long without a request has ended
+const ROUTINGS = ["order", "usage", "pace"];  // what a click on a group's routing cycles through
+const PUBLISH_EVERY_MS = 10 * 1000;           // pane-header data rewritten at least this often
+const HEADLESS_IDLE_MS =10 * 60 * 1000;  // a headless run (claude -p) this long without a request has ended
 const ALERT_EVERY_MS = 10 * 60 * 1000;   // at most one toast per group and kind in this window
 const SCRATCH = /\/([0-9a-f-]{36})\/scratchpad$/;
 
@@ -303,6 +305,7 @@ export default class MagpieRouting extends View {
           const read = parseRead(r.stdout);
           this.error = read.nolog ? `no magpie usage log on ${where}` : null;
           again = this.take(read, asked);
+          this.publish();
           if (this.titleIds().some((sid) => !this.titles.has(sid))) this.refreshTitles(cx);
         }
       } catch (e) {
@@ -411,7 +414,56 @@ export default class MagpieRouting extends View {
         }
       } catch {}
       this.titling = false;
+      this.publish();
       cx.notify();
+    });
+  }
+
+  // Each session's live state, keyed by the Herdr pane it runs in, for the magpie-pane header.
+  // Written when it changes, else every PUBLISH_EVERY_MS so headers can tell the panel still runs:
+  // every mod re-renders on a shared write.
+  publish() {
+    const byTitle = this.agentsByTitle(), out = {};
+    for (const [sid, s] of this.sessions) {
+      const agent = this.agentFor(sid, byTitle);
+      const g = s.agents.get("") || s.agents.get(s.last.subagent || "");
+      if (!agent || !g?.last) continue;
+      const r = g.lastCtx, oneM = g.maxCtx > 200_000 || this.oneM.has(sid);
+      const info = {
+        model: shortModel(servedOf(g.last)),
+        fb: fellBack(this.groups, g.last),
+        acct: this.acctOf(g.last),
+        ctx: r ? ctxOf(r) : 0,
+        win: r && /^claude-/.test(servedOf(r)) ? (oneM ? 1_000_000 : 200_000) : 0,
+        err: failed(g.last) ? String(g.last.status) : null,
+        subs: [...s.agents.keys()].filter((id) => id && this.agents.has(`${sid}/${id}`) && !this.agents.get(`${sid}/${id}`).finished).length,
+      };
+      // Keyed by pane and by terminal: the header looks up either. Sessions come newest first, so the newest wins.
+      if (agent.pane && !out[agent.pane]) out[agent.pane] = info;
+      if (agent.address && !out[agent.address]) out[agent.address] = info;
+    }
+    const json = JSON.stringify(out), now = Date.now();
+    if (json === this.published && now - this.publishedAt < PUBLISH_EVERY_MS) return;
+    this.published = json;
+    this.publishedAt = now;
+    try { setShared("magpie.panes", { at: now, panes: out }); } catch {}
+  }
+
+  // Runs one magpie command on the magpie machine, toasts how it went, then re-reads accounts and groups.
+  act(cx, args, done) {
+    const on = this.on;
+    cx.spawn(async (cx) => {
+      let ok = false, msg = "";
+      try {
+        const r = await sh(`${SH_MAGPIE}; "$M" "$@" 2>&1`, on, args);
+        ok = r.code === 0;
+        msg = String(r.stdout || r.stderr || "").trim().split("\n").pop() || "";
+      } catch (e) { msg = String(e?.message ?? e); }
+      try {
+        notify(ok ? { title: `magpie: ${done}`, body: msg.slice(0, 200), level: "success", timeout: 6000 }
+          : { title: `magpie: ${args.slice(0, 3).join(" ")} failed`, body: msg.slice(0, 300), level: "error", timeout: 10000 });
+      } catch {}
+      this.refreshAccounts(cx);
     });
   }
 
@@ -430,8 +482,12 @@ export default class MagpieRouting extends View {
       // An agent with several accounts: each one by name, ● for the one signed in, agent and plan under it.
       const many = this.accounts.filter((x) => x.agent === a.agent).length > 1;
       const label = (i) => (!many ? div().w(80).child(i ? "" : a.agent)
-        : i === 0 ? div().w(80).truncate().text_color(a.active ? t.ansi2 : t.foreground).child(`${a.active ? "●" : "○"} ${acctName(a)}`)
+        // Clicking an account not signed in signs the agent in to it.
+        : i === 0 ? div().id(`qa-${ai}`).w(80).truncate().text_color(a.active ? t.ansi2 : t.foreground).child(`${a.active ? "●" : "○"} ${acctName(a)}`)
+          .when(!a.active, (e) => e.cursor_pointer().hover((s) => s.text_color(t.ansi2)).on_click((_e, cx) => this.act(cx,
+            ["accounts", "switch", a.agent, a.alias || String(a.user).split(" · ")[0]], `${a.agent} switched to ${acctName(a)}`)))
         : div().w(80).truncate().text_size(11).text_color(t.dim).child(i === 1 ? `${[a.agent, a.plan].filter(Boolean).join(" ")}` : ""));
+      if (ai) rows.push(div().px(14).py(3).child(div().h(1).bg(t.border)));
       const wins = (a.windows || []).filter((w) => !/·/.test(w.name) || w.used > 0);
       // No quota figures (an API-key plugin such as agy-cli reports every window at 0%): its traffic from the log instead.
       if (!wins.length) {
@@ -468,9 +524,18 @@ export default class MagpieRouting extends View {
       const members = (this.groups.get(ref)?.members || []).map(modelOf);
       const g = this.groupStats.get(ref), served = g?.last ? servedOf(g.last) : null;
       const chain = members.length ? members : served ? [served] : [];
+      // Clicking the routing cycles it through ROUTINGS. Any other routing (smart, weight, manual…)
+      // is shown but not clickable: one click would lose it, and the cycle never comes back to it.
+      const routing = this.groups.get(ref)?.routing;
+      const cycles = ROUTINGS.includes(routing);
+      const next = ROUTINGS[(ROUTINGS.indexOf(routing) + 1) % ROUTINGS.length];
       return v_flex().id(`g-${ref}`).px(14).py(3).gap(1)
         .child(h_flex().gap(8).items_center()
-          .child(div().flex_1().min_w(0).truncate().child(groupName(ref)))
+          .child(div().flex_shrink_1().min_w(0).truncate().child(groupName(ref)))
+          .when(routing, (e) => e.child(div().id(`gr-${ref}`).flex_none().px(4).rounded(4).text_size(11).text_color(t.dim).child(routing)
+            .when(cycles, (c) => c.cursor_pointer().hover((s) => s.bg(t.raised).text_color(t.foreground))
+              .on_click((_e, cx) => this.act(cx, ["group", "set", ref.replace(/^group\//, ""), `routing=${next}`], `${groupName(ref)} routing ${routing} → ${next}`)))))
+          .child(div().flex_1())
           .when(g?.fails, (e) => e.child(div().text_size(11).text_color(t.ansi1).child(`${g.fails} err`)))
           .child(div().flex_none().text_size(11).text_color(t.dim).whitespace_nowrap().child(!g?.n ? "idle"
             : `${g.n} req · cache ${g.ctx ? Math.round((100 * g.cached) / g.ctx) : 0}% · ttft ${(g.ttft / 1000).toFixed(1)}s`)))

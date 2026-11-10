@@ -37,14 +37,14 @@ Both read magpie's files on the machine where magpie runs. The desktop panel rea
 
 The installer:
 
-1. copies the mod into the app's `mods` folder and sets `MACHINE` in `main.js` to `-Machine`;
+1. copies both mods (`magpie-routing`, `magpie-pane`) into the app's `mods` folder and sets `MACHINE` in the panel's `main.js` to `-Machine`;
 2. clones the read-only `main` layout and `tabs` mod to `my-main` and `my-tabs`, if they don't exist yet;
-3. adds the panel block to `my-main.json` and the **Magpie** button to `my-tabs`, keeping `.bak` copies of both;
-4. checks both mods with `herdr-app check` and switches to the `my-main` layout.
+3. adds the panel block to `my-main.json`, sets its pane header to `magpie-pane`, and adds the **Magpie** button to `my-tabs`, keeping `.bak` copies of both;
+4. checks the mods with `herdr-app check` and switches to the `my-main` layout.
 
 **Update:** `git pull` on the magpie machine, then run the installer again.
 
-**Uninstall:** switch back to the `main` layout, then delete `mods/magpie-routing` from the app's config folder. Restore `my-main.json` and `my-tabs` from their `.bak` copies if you want to keep those layouts.
+**Uninstall:** switch back to the `main` layout, then delete `mods/magpie-routing` and `mods/magpie-pane` from the app's config folder. Restore `my-main.json` and `my-tabs` from their `.bak` copies if you want to keep those layouts.
 
 ### Other desktop platforms
 

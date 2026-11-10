@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- New pane header mod (`mod/magpie-pane`): each Herdr pane running Claude Code shows its model (orange with ⚠ on a fallback), account, context bar, running subagents and a failed last request. The installer sets it on `my-main`. It updates while the panel runs.
+- Quota: click an account not signed in to switch the agent to it (`magpie accounts switch`).
+- Groups: each group shows its routing; click it to cycle `order → usage → pace` (`magpie group set`). Other routings aren't clickable.
+- Both actions toast their result.
+- Quota: a thin line between accounts.
+
 ## 0.4.1 (2026-11-10)
 
 - Quota: an account that reports no quota figures (agy-cli) shows its last 5 hours of requests, context and output tokens, and failures, instead of `all 0% used`.

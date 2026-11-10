@@ -1,5 +1,5 @@
 # Installs the magpie-routing mod into the local Herdr desktop app and adds a
-# "Magpie" button next to Files and Changes.
+# "Magpie" button next to Files and Changes, plus the magpie-pane header on each pane.
 # Usage:  powershell -ExecutionPolicy Bypass -File install-windows.ps1 -Vps you@your-vps [-Machine vps]
 # -Machine: the name Herdr gives the VPS (Settings > Machines), where magpie runs.
 param(
@@ -35,20 +35,22 @@ Write-Host "herdr-app config: $AppHome"
 $mods = Join-Path $AppHome "mods"
 $layouts = Join-Path $AppHome "layouts"
 
-# 2. Copy the mod from the VPS
-Write-Host "Copying the mod from $Vps ..."
+# 2. Copy the mods from the VPS: the panel and the pane header
+Write-Host "Copying the mods from $Vps ..."
 # Download to a temp folder first: herdr-app holds the loaded main.js open, so scp
 # cannot write over it ("Broken pipe"), but Copy-Item can.
 $stage = Join-Path $env:TEMP "magpie-routing-$PID"
 Remove-Item $stage -Recurse -Force -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Path $stage | Out-Null
-scp -r "${Vps}:dev/tools/herdr-magpie-routing/mod/magpie-routing" "$stage"
-if ($LASTEXITCODE -ne 0) { Fail "scp failed." }
-New-Item -ItemType Directory -Path (Join-Path $mods "magpie-routing") -Force | Out-Null
-try {
-  Copy-Item (Join-Path $stage "magpie-routing\*") (Join-Path $mods "magpie-routing") -Recurse -Force -ErrorAction Stop
-} catch {
-  Fail "Could not overwrite the installed mod ($($_.Exception.Message)). Quit herdr-app and run this script again."
+foreach ($m in @("magpie-routing", "magpie-pane")) {
+  scp -r "${Vps}:dev/tools/herdr-magpie-routing/mod/$m" "$stage"
+  if ($LASTEXITCODE -ne 0) { Fail "scp of mod/$m failed." }
+  New-Item -ItemType Directory -Path (Join-Path $mods $m) -Force | Out-Null
+  try {
+    Copy-Item (Join-Path $stage "$m\*") (Join-Path $mods $m) -Recurse -Force -ErrorAction Stop
+  } catch {
+    Fail "Could not overwrite the installed mod $m ($($_.Exception.Message)). Quit herdr-app and run this script again."
+  }
 }
 Remove-Item $stage -Recurse -Force -ErrorAction SilentlyContinue
 $modMain = Join-Path $mods "magpie-routing\main.js"
@@ -76,17 +78,19 @@ if (-not (Test-Path $layoutFile) -or -not (Test-Path $tabsFile)) {
   if (-not (Test-Path $layoutFile) -or -not (Test-Path $tabsFile)) { Fail "the clones were not created." }
 }
 
-# 4. Layout: use my-tabs, add the magpie block to the right panel
+# 4. Layout: use my-tabs and the magpie-pane header, add the magpie block to the right panel
 $layoutText = Get-Content $layoutFile -Raw -Encoding UTF8
 Copy-Item $layoutFile "$layoutFile.bak" -Force
 $layout = $layoutText | ConvertFrom-Json
-$state = @{ tabs = $false; body = $false }
+$state = @{ tabs = $false; body = $false; pane = $false }
 function Walk($node) {
   if ($null -eq $node) { return }
   if ($node -is [System.Array]) { foreach ($n in $node) { Walk $n }; return }
   if ($node -isnot [System.Management.Automation.PSCustomObject]) { return }
   if ($node.content -and $node.content.mod -eq "tabs") { $node.content.mod = "my-tabs"; $state.tabs = $true }
   if ($node.content -and $node.content.mod -eq "my-tabs") { $state.tabs = $true }
+  if ($node.content -and $node.content.mod -eq "pane") { $node.content.mod = "magpie-pane"; $state.pane = $true }
+  if ($node.content -and $node.content.mod -eq "magpie-pane") { $state.pane = $true }
   if ($node.id -eq "panel-body") {
     $state.body = $true
     if (-not ($node.children | Where-Object { $_.id -eq "magpie" })) {
@@ -99,6 +103,7 @@ function Walk($node) {
 Walk $layout
 if (-not $state.tabs) { Fail "no tab bar block (mod 'tabs') found in my-main.json." }
 if (-not $state.body) { Fail "no 'panel-body' stack found in my-main.json." }
+if (-not $state.pane) { Write-Host "No pane header (mod 'pane') in my-main.json: the magpie-pane header is installed but not used." -ForegroundColor Yellow }
 $json = $layout | ConvertTo-Json -Depth 100
 [System.IO.File]::WriteAllText($layoutFile, $json, (New-Object System.Text.UTF8Encoding $false))
 Write-Host "Updated $layoutFile (backup: my-main.json.bak)"
@@ -121,7 +126,7 @@ if ($tabs -notmatch 'panelButton\("magpie"') {
 
 # 6. Check
 if ($herdrApp) {
-  foreach ($m in @("my-tabs", "magpie-routing")) {
+  foreach ($m in @("my-tabs", "magpie-routing", "magpie-pane")) {
     $code = Invoke-HerdrApp @("check", "`"$(Join-Path $mods $m)`"")
     if ($code -ne 0 -and $code -ne 124) { Fail "herdr-app check failed for mods\$m (error above)." }
   }

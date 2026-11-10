@@ -56,7 +56,7 @@ One bar per account window that `magpie accounts --json` reports: 5-hour, 7-day 
 
 An account that reports no quota figures (every window at 0%, as an API-key plugin such as agy-cli does) shows its traffic instead, from the usage log: `5 hours  30 req · 1.3M in · 10k out`, with failed requests in red.
 
-An agent signed in to several accounts (`magpie accounts add claude`) gets one block per account, named by its alias (`magpie accounts alias`) or the part of its email before `@`. **●** marks the account signed in, **○** the others; the agent and plan sit under the name.
+An agent signed in to several accounts (`magpie accounts add claude`) gets one block per account, named by its alias (`magpie accounts alias`) or the part of its email before `@`. **●** marks the account signed in, **○** the others; the agent and plan sit under the name. Click a **○** account to switch the agent to it (`magpie accounts switch`); a toast says whether it worked.
 
 ## Latest requests
 
@@ -82,9 +82,23 @@ An agent whose requests failed also gets its latest error, in red, on a line und
 
 ## Groups (last hour)
 
-Each magpie group with its fallback chain, `first › second › third`. The member that served the group's latest request is highlighted, with ⚠ when it isn't the first.
+Each magpie group with its routing and its fallback chain, `first › second › third`. The member that served the group's latest request is highlighted, with ⚠ when it isn't the first.
+
+Click the routing next to the name to cycle it `order → usage → pace` (`magpie group set <id> routing=<next>`); a toast says whether it worked. Any other routing (`smart`, `weight`, `manual`…) is shown but not clickable, so a click never loses it; change it with the CLI.
 
 On the right: failed requests (`N err`) if any, requests in the last hour, **cache** (the share of context read from the prompt cache) and the median **ttft** (time to first token). `idle` means no requests in the hour.
+
+## Pane header
+
+The `magpie-pane` mod replaces Herdr's pane header. It keeps the program, name, folder, status and hover buttons, and adds, for a pane running Claude Code:
+
+```
+Claude Code  ~/dev/app            opus-5-5 · pro ▬▬── 147k/1M  2 sub  ✕ 529
+```
+
+The model that served the latest request (orange with ⚠ on a fallback), the account when its provider has several, the context bar, running subagents, and the status of a failed last request. The magpie part hides while the pointer is on the header, to make room for the buttons.
+
+The panel publishes this data, so the headers update only while the Magpie panel is running (it does not need to be the panel shown). When the panel stops, or can't reach the magpie machine, the magpie part disappears after 30 seconds rather than showing old figures.
 
 ## Toasts
 

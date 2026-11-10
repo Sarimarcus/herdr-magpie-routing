@@ -37,7 +37,7 @@ Then try it in the desktop app: re-run the installer, open the panel, and watch 
 ## Style
 
 - Plain JavaScript, no build step, no dependencies.
-- Read-only: the panel never writes to magpie's files or calls its gateway.
+- Read-only by default: the panel never writes to magpie's files or calls its gateway on its own. The only writes are user clicks that run a magpie CLI command: switching an agent's account (`magpie accounts switch`) and cycling a group's routing among order, usage and pace (`magpie group set`). A new write needs the same: a deliberate click, through the CLI, with a toast saying how it went.
 - Comments only where the code can't say it.
 - Keep anything that identifies your machine (IPs, hostnames, emails, paths under your home) out of commits and screenshots.
 
