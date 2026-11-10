@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.0 (2026-11-10)
 
 - Several accounts of one agent: Quota names each by its alias, marks the one signed in (●) and shows its plan.
 - Latest requests tags a request with the account that served it when its provider has several.
