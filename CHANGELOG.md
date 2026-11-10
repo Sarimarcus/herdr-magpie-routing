@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.1 (2026-11-10)
 
 - Quota: an account that reports no quota figures (agy-cli) shows its last 5 hours of requests, context and output tokens, and failures, instead of `all 0% used`.
 - Token counts past a million read `1.3M` instead of `1332k`.
