@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.5.0 (2026-11-10)
 
 - New pane header mod (`mod/magpie-pane`): each Herdr pane running Claude Code shows its model (orange with ⚠ on a fallback), account, context bar, running subagents and a failed last request. The installer sets it on `my-main`. It updates while the panel runs.
 - Quota: click an account not signed in to switch the agent to it (`magpie accounts switch`).
