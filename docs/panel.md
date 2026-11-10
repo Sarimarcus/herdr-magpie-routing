@@ -100,6 +100,12 @@ The model that served the latest request (orange with ⚠ on a fallback), the ac
 
 The panel publishes this data, so the headers update only while the Magpie panel is running (it does not need to be the panel shown). When the panel stops, or can't reach the magpie machine, the magpie part disappears after 30 seconds rather than showing old figures.
 
+## Tab names
+
+A tab nobody named, which Herdr labels by its position (`1`, `2`), shows the title of the agent session in it instead, the focused one when there are several. A tab you renamed (double-click it) keeps your name; renaming it to nothing gives it back the session title. Only the tab bar's label changes: the tab itself stays unnamed, so the Agents list still shows its number.
+
+The title comes from the panel while it runs, else from the terminal title the agent sets.
+
 ## Toasts
 
 A toast appears when a request fails, a group falls back to its next member, or a provider's requests move to another of its accounts (`claude now on pro`). Each group and kind, and each provider's account change, toasts at most once every 10 minutes. Toasts start only after the first read, so opening the panel never replays old failures.

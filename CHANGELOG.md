@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.0 (2026-11-10)
+
+- Tab bar: a tab nobody named shows its agent's session title (e.g. `WES-378 epic`) instead of its number. A tab you renamed keeps its name. The installer patches `my-tabs` for this; re-run it.
+- Quota: a per-model window reads `Fable 7d` instead of a truncated `7 days…`.
+- Fix: Quota percentages are rounded (`28%`, not `28.000000000000004%`).
+
 ## 0.5.1 (2026-11-10)
 
 - Pane header: shows the session's title instead of `Claude Code`.

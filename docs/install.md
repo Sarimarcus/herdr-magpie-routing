@@ -39,7 +39,7 @@ The installer:
 
 1. copies both mods (`magpie-routing`, `magpie-pane`) into the app's `mods` folder and sets `MACHINE` in the panel's `main.js` to `-Machine`;
 2. clones the read-only `main` layout and `tabs` mod to `my-main` and `my-tabs`, if they don't exist yet;
-3. adds the panel block to `my-main.json`, sets its pane header to `magpie-pane`, and adds the **Magpie** button to `my-tabs`, keeping `.bak` copies of both;
+3. adds the panel block to `my-main.json`, sets its pane header to `magpie-pane`, adds the **Magpie** button to `my-tabs`, and makes `my-tabs` label a tab nobody named with its session title, keeping `.bak` copies of both;
 4. checks the mods with `herdr-app check` and switches to the `my-main` layout.
 
 **Update:** `git pull` on the magpie machine, then run the installer again.

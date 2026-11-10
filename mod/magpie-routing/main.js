@@ -507,10 +507,10 @@ export default class MagpieRouting extends View {
         return;
       }
       wins.forEach((w, i) => {
-        const pct = Math.min(100, Math.max(0, w.used)), pc = pace(w);
+        const pct = Math.min(100, Math.max(0, Math.round(w.used))), pc = pace(w);
         rows.push(row(`q-${ai}-${i}`)
           .child(label(i))
-          .child(div().w(58).flex_none().text_color(t.muted).truncate().child(w.name))
+          .child(div().w(58).flex_none().text_color(t.muted).truncate().child(w.name.replace(/^(\d+) ([hd])\w* · (.+)$/, "$3 $1$2")))
           .child(bar(t, pct, level(t, pct, 70, t.ansi2), 8).flex_1().min_w(40))
           .child(div().w(34).flex_none().whitespace_nowrap().text_size(12).child(`${pct}%`))
           .child(div().w(84).flex_none().text_size(11).whitespace_nowrap().truncate()

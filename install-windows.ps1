@@ -124,6 +124,32 @@ if ($tabs -notmatch 'panelButton\("magpie"') {
   Write-Host "Updated $tabsFile (backup: main.js.bak)"
 }
 
+# 5b. Tab bar: a tab nobody named shows its agent's session title instead of its number
+$tabs = Get-Content $tabsFile -Raw -Encoding UTF8
+$line = [regex]::Match($tabs, '(?m)^([ \t]*)const name = [^\r\n]*')
+$imports = $tabs -match '(?s)import \{[^}]*\bshared\b[^}]*\} from "herdr"' -and $tabs -match '(?s)import \{[^}]*\bpanes\b[^}]*\} from "herdr"'
+if ($tabs -match 'magpieTitle') {
+} elseif (-not $line.Success) {
+  Write-Host "my-tabs/main.js: the 'const name = ...' line was not found; tabs keep Herdr's names." -ForegroundColor Yellow
+} elseif (-not $imports) {
+  Write-Host "my-tabs/main.js does not import shared and panes from herdr; tabs keep Herdr's names." -ForegroundColor Yellow
+} else {
+  if (-not (Test-Path "$tabsFile.bak")) { Copy-Item $tabsFile "$tabsFile.bak" -Force }
+  $indent = $line.Groups[1].Value
+  $title = @'
+let magpie = null; try { magpie = shared("magpie.panes"); } catch {}
+const live = magpie?.at > Date.now() - 30000 ? magpie.panes : null;
+const agent = panes().filter(p => p.tab === c.id && p.program?.agent).sort((a, b) => b.focused - a.focused)[0];
+const magpieTitle = !c.named && agent && ((live?.[agent.pane] || live?.[agent.terminal])?.title || String(agent.title || "").replace(/^[^\p{L}\p{N}]+/u, "").trim());
+'@
+  $block = (($title.Trim() -split "\r?\n") | ForEach-Object { "$indent$_" }) -join "`n"
+  $renamed = $line.Value.Replace("const name = ", "const herdrName = ")
+  $patched = "$block`n$renamed`n${indent}const name = magpieTitle || herdrName;"
+  $tabs = $tabs.Remove($line.Index, $line.Length).Insert($line.Index, $patched)
+  [System.IO.File]::WriteAllText($tabsFile, $tabs, (New-Object System.Text.UTF8Encoding $false))
+  Write-Host "Updated ${tabsFile}: unnamed tabs show the session title"
+}
+
 # 6. Check
 if ($herdrApp) {
   foreach ($m in @("my-tabs", "magpie-routing", "magpie-pane")) {
