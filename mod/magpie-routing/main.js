@@ -12,6 +12,7 @@ const KEEP = 1500;                       // log lines kept in memory
 const ACTIVE_MS = 5 * 60 * 1000;         // "active" and req/min in the header
 const QUIET_MS = 5 * 60 * 1000;          // a running subagent silent this long is flagged
 const SESSION_WINDOW_MS = 30 * 60 * 1000;
+const HEADLESS_IDLE_MS = 10 * 60 * 1000;  // a headless run (claude -p) this long without a request has ended
 const ALERT_EVERY_MS = 10 * 60 * 1000;   // at most one toast per group and kind in this window
 const SCRATCH = /\/([0-9a-f-]{36})\/scratchpad$/;
 
@@ -138,6 +139,9 @@ function resetIn(iso) {
   const ms = new Date(iso) - Date.now();
   return ms > 0 ? dur(ms) : "";
 }
+
+// An account's alias, else its email's part before @: the full address would end up in screenshots.
+const acctName = (a) => a.alias || String(a.user || "?").split("@")[0];
 
 const level = (t, pct, warn, base) => (pct >= 90 ? t.ansi1 : pct >= warn ? t.ansi3 : base);
 const bar = (t, pct, col, h) => div().h(h).rounded(h / 2).bg(t.raised).overflow_hidden()
@@ -267,6 +271,21 @@ export default class MagpieRouting extends View {
     this.accounts = [];
     this.accountsError = null;
     this.sys = null;
+    this.lastAcct = new Map();
+  }
+
+  // The name of the account that served r, when its provider has more than one; else null.
+  acctOf(r) {
+    if (!r.providerAccount) return null;
+    const same = this.accounts.filter((a) => a.agent === r.provider);
+    const a = same.length > 1 && same.find((x) => x.user === r.providerAccount);
+    return a ? acctName(a) : null;
+  }
+
+  toast(key, n) {
+    if (Date.now() - (this.alerted.get(key) || 0) < ALERT_EVERY_MS) return;
+    this.alerted.set(key, Date.now());
+    try { notify(n); } catch {}
   }
 
   refresh(cx) {
@@ -306,6 +325,7 @@ export default class MagpieRouting extends View {
       this.reqs = (this.offset > 0 ? this.reqs.concat(read.rows) : read.rows).slice(-KEEP);
       // Only the first read sets the baseline; a later full read is a rotated log, whose rows are new.
       if (this.offset > 0) this.alert(read.rows);
+      else for (const r of read.rows) if (r.providerAccount && r.status === 200) this.lastAcct.set(r.provider, r.providerAccount);
       this.offset = read.size;
     }
     for (const [sid, cwd] of read.cwds) this.cwds.set(sid, cwd);
@@ -318,21 +338,24 @@ export default class MagpieRouting extends View {
     return this.sessions.some(([sid]) => !this.looked.has(sid));
   }
 
-  // Toasts for new requests that failed or fell back. Held until the groups are known: a fallback
-  // is judged against the group's first member.
+  // Toasts for new requests that failed, fell back, or moved to another account of their provider.
+  // Held until the groups and accounts are known: a fallback is judged against the group's first member.
   alert(rows) {
     if (!this.groups.size) { this.held = this.held.concat(rows).slice(-KEEP); return; }
     for (const r of rows) {
+      if (r.providerAccount && r.status === 200) {
+        const prev = this.lastAcct.get(r.provider);
+        this.lastAcct.set(r.provider, r.providerAccount);
+        const now = this.acctOf(r), was = this.acctOf({ ...r, providerAccount: prev });
+        if (prev && prev !== r.providerAccount && now && was) {
+          this.toast(`${r.provider}|account`, { title: `magpie: ${r.provider} now on ${now}`, body: `was on ${was}`, level: "warning", timeout: 8000 });
+        }
+      }
       const kind = failed(r) ? "error" : fellBack(this.groups, r) ? "fallback" : null;
       if (!kind) continue;
-      const key = `${r.req}|${kind}`;
-      if (Date.now() - (this.alerted.get(key) || 0) < ALERT_EVERY_MS) continue;
-      this.alerted.set(key, Date.now());
-      try {
-        notify(kind === "error"
-          ? { title: `magpie: ${askedOf(r)} request failed (${r.status})`, body: `${servedOf(r)} via ${r.provider || "?"}`, level: "error", timeout: 10000 }
-          : { title: `magpie: ${askedOf(r)} fell back`, body: `served by ${servedOf(r)}`, level: "warning", timeout: 8000 });
-      } catch {}
+      this.toast(`${r.req}|${kind}`, kind === "error"
+        ? { title: `magpie: ${askedOf(r)} request failed (${r.status})`, body: `${servedOf(r)} via ${r.provider || "?"}`, level: "error", timeout: 10000 }
+        : { title: `magpie: ${askedOf(r)} fell back`, body: `served by ${servedOf(r)}`, level: "warning", timeout: 8000 });
     }
   }
 
@@ -403,17 +426,22 @@ export default class MagpieRouting extends View {
   quotaRows(t) {
     const rows = [];
     if (this.accountsError) rows.push(note(t.ansi1, this.accountsError));
-    for (const a of this.accounts) {
+    this.accounts.forEach((a, ai) => {
+      // An agent with several accounts: each one by name, ● for the one signed in, agent and plan under it.
+      const many = this.accounts.filter((x) => x.agent === a.agent).length > 1;
+      const label = (i) => (!many ? div().w(80).child(i ? "" : a.agent)
+        : i === 0 ? div().w(80).truncate().text_color(a.active ? t.ansi2 : t.foreground).child(`${a.active ? "●" : "○"} ${acctName(a)}`)
+        : div().w(80).truncate().text_size(11).text_color(t.dim).child(i === 1 ? `${[a.agent, a.plan].filter(Boolean).join(" ")}` : ""));
       const wins = (a.windows || []).filter((w) => !/·/.test(w.name) || w.used > 0);
       if (!wins.length) {
-        rows.push(row(`q-${a.agent}`).child(div().w(56).child(a.agent))
+        rows.push(row(`q-${ai}`).child(label(0))
           .child(div().text_color(t.dim).child(a.windows?.length ? `${a.windows.length} per-model windows, all 0% used` : "no windows reported")));
-        continue;
+        return;
       }
       wins.forEach((w, i) => {
         const pct = Math.min(100, Math.max(0, w.used)), pc = pace(w);
-        rows.push(row(`q-${a.agent}-${i}`)
-          .child(div().w(56).child(i ? "" : a.agent))
+        rows.push(row(`q-${ai}-${i}`)
+          .child(label(i))
           .child(div().w(58).text_color(t.muted).truncate().child(w.name))
           .child(bar(t, pct, level(t, pct, 70, t.ansi2), 8).flex_1().min_w(40))
           .child(div().w(34).text_size(12).child(`${pct}%`))
@@ -421,7 +449,7 @@ export default class MagpieRouting extends View {
             .text_color(!pc ? t.dim : pc.ok ? t.ansi2 : t.ansi1).child(pc ? pc.text : ""))
           .child(div().w(52).flex_none().text_size(11).text_color(t.dim).child(`↻ ${resetIn(w.resetsAt)}`)));
       });
-    }
+    });
     return rows;
   }
 
@@ -573,7 +601,7 @@ export default class MagpieRouting extends View {
       .child(div().w(56).flex_none().text_color(t.dim).child(hhmm(r.t)))
       .child(div().w(80).flex_none().truncate().text_color(t.muted).child(askedOf(r)))
       .child(div().flex_1().min_w(0).truncate().text_color(failed(r) ? t.ansi1 : t.foreground)
-        .child(shortModel(servedOf(r)) + (r.kind ? ` · ${r.kind}` : "") + statusTag(r)))
+        .child(shortModel(servedOf(r)) + (this.acctOf(r) ? ` · ${this.acctOf(r)}` : "") + (r.kind ? ` · ${r.kind}` : "") + statusTag(r)))
       .child(div().flex_none().text_color(t.dim).child(`${kTok(ctxOf(r))} → ${kTok(r.out)} · ${((r.ms || 0) / 1000).toFixed(1)}s`)));
   }
 
@@ -599,7 +627,9 @@ export default class MagpieRouting extends View {
 
   render(_cx) {
     const t = theme();
-    const sessions = this.loading || this.error ? [] : this.sessions;
+    // No one waits on a headless run's prompt, so a long silence means it has ended: drop it and its subagents.
+    const sessions = this.loading || this.error ? [] : this.sessions.filter(([sid, s]) =>
+      !(this.titles.get(sid) || "").startsWith("headless") || sinceEnd(s.last) < HEADLESS_IDLE_MS);
     const active = sessions.filter(([, s]) => sinceEnd(s.last) < ACTIVE_MS).length;
     const body = this.error
       ? [div().p(14).text_color(t.ansi1).child(this.error)]

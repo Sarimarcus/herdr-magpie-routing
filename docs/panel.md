@@ -21,7 +21,7 @@ The second line is the machine's health, read every 60 seconds on a Linux magpie
 
 ## Sessions (last 30 min)
 
-One block per Claude Code session that made a request in the last 30 minutes, newest first.
+One block per Claude Code session that made a request in the last 30 minutes, newest first. A headless `claude -p` run leaves after 10 minutes without a request, with its subagents: nobody answers its prompts, so a silence that long means it has ended.
 
 | Element | Meaning |
 |---|---|
@@ -56,12 +56,15 @@ One bar per account window that `magpie accounts --json` reports: 5-hour, 7-day 
 
 Accounts with many per-model windows that are all unused collapse into one line.
 
+An agent signed in to several accounts (`magpie accounts add claude`) gets one block per account, named by its alias (`magpie accounts alias`) or the part of its email before `@`. **●** marks the account signed in, **○** the others; the agent and plan sit under the name.
+
 ## Latest requests
 
 The last 10 requests: time, the group or model asked for, the model that served it, context → output tokens, and duration.
 
 | Tag | Meaning |
 |---|---|
+| `· pro` | The account that served it, when its provider has several |
 | `· compact` / `· web_search` | The request kind, when it isn't an ordinary turn |
 | status code | Shown after the model when it isn't 200 |
 | red model | Failed. Cancelled (499) or handed-on requests are not failures |
@@ -85,4 +88,4 @@ On the right: failed requests (`N err`) if any, requests in the last hour, **cac
 
 ## Toasts
 
-A toast appears when a request fails or a group falls back to its next member. Each group and kind toasts at most once every 10 minutes. Toasts start only after the first read, so opening the panel never replays old failures.
+A toast appears when a request fails, a group falls back to its next member, or a provider's requests move to another of its accounts (`claude now on pro`). Each group and kind, and each provider's account change, toasts at most once every 10 minutes. Toasts start only after the first read, so opening the panel never replays old failures.

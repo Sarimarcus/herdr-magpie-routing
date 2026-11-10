@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Several accounts of one agent: Quota names each by its alias, marks the one signed in (●) and shows its plan.
+- Latest requests tags a request with the account that served it when its provider has several.
+- A toast when a provider's requests move to another of its accounts, e.g. `claude now on pro`.
+- A headless `claude -p` session leaves Sessions after 10 minutes without a request instead of 30, so an ended run's unfinished subagents no longer show as running.
+- Fix: two accounts of one agent no longer share Quota row ids.
+
 ## 0.3.0 (2026-11-09)
 
 - A line under the header shows the magpie machine's load per core, RAM in use and free disk, each with a bar, yellow and red past set thresholds (Linux only).
