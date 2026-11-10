@@ -54,7 +54,7 @@ One bar per account window that `magpie accounts --json` reports: 5-hour, 7-day 
 - **Pace:** at the window's average rate so far, `on pace` (green) when it lasts until the reset, otherwise `out in <time>` (red).
 - **↻** time until the window resets.
 
-Accounts with many per-model windows that are all unused collapse into one line.
+An account that reports no quota figures (every window at 0%, as an API-key plugin such as agy-cli does) shows its traffic instead, from the usage log: `5 hours  30 req · 1.3M in · 10k out`, with failed requests in red.
 
 An agent signed in to several accounts (`magpie accounts add claude`) gets one block per account, named by its alias (`magpie accounts alias`) or the part of its email before `@`. **●** marks the account signed in, **○** the others; the agent and plan sit under the name.
 

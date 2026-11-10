@@ -94,7 +94,7 @@ const hhmm = (t) => new Date(t).toTimeString().slice(0, 8);
 const ago = (ms) => { const s = Math.max(0, Math.round((Date.now() - ms) / 1000)); return s < 10 ? "now" : s < 60 ? `${s}s ago` : `${Math.floor(s / 60)}m ago`; };
 const norm = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 const ctxOf = (r) => (r.in || 0) + (r.cache_read || 0) + (r.cache_write || 0);
-const kTok = (n) => (n >= 1000 ? `${(n / 1000).toFixed(n >= 10000 ? 0 : 1)}k` : String(n || 0));
+const kTok = (n) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1000 ? `${(n / 1000).toFixed(n >= 10000 ? 0 : 1)}k` : String(n || 0));
 const median = (xs) => { const v = xs.filter((x) => x > 0).sort((a, b) => a - b); return v.length ? v[Math.floor(v.length / 2)] : 0; };
 function dur(ms) {
   const m = Math.max(0, Math.round(ms / 6e4));
@@ -433,9 +433,18 @@ export default class MagpieRouting extends View {
         : i === 0 ? div().w(80).truncate().text_color(a.active ? t.ansi2 : t.foreground).child(`${a.active ? "●" : "○"} ${acctName(a)}`)
         : div().w(80).truncate().text_size(11).text_color(t.dim).child(i === 1 ? `${[a.agent, a.plan].filter(Boolean).join(" ")}` : ""));
       const wins = (a.windows || []).filter((w) => !/·/.test(w.name) || w.used > 0);
+      // No quota figures (an API-key plugin such as agy-cli reports every window at 0%): its traffic from the log instead.
       if (!wins.length) {
+        const since = Date.now() - 18e6;
+        const mine = this.reqs.filter((r) => r.provider === a.agent && r._end >= since && !canceled(r)
+          && (!many || r.providerAccount === a.user));
+        const errs = mine.filter(failed).length;
         rows.push(row(`q-${ai}`).child(label(0))
-          .child(div().text_color(t.dim).child(a.windows?.length ? `${a.windows.length} per-model windows, all 0% used` : "no windows reported")));
+          .child(div().w(58).flex_none().text_color(t.muted).child("5 hours"))
+          .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(mine.length ? t.foreground : t.dim).child(!mine.length ? "no requests"
+            : `${mine.length} req · ${kTok(mine.reduce((s, r) => s + ctxOf(r), 0))} in · ${kTok(mine.reduce((s, r) => s + (r.out || 0), 0))} out`))
+          .when(errs, (e) => e.child(div().flex_none().text_size(11).text_color(t.ansi1).child(`${errs} err`)))
+          .child(div().flex_none().text_size(11).text_color(t.dim).child("no quota reported")));
         return;
       }
       wins.forEach((w, i) => {
