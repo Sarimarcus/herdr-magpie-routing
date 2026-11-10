@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Pane header: shows the session's title instead of `Claude Code`.
+- A session renamed with `/rename` is matched to its pane by that name: the panel now prefers the custom title over the AI titles Claude Code keeps writing after it.
+- Fix: Quota cells no longer shrink, which made percentages wrap over neighbouring rows.
+
 ## 0.5.0 (2026-11-10)
 
 - New pane header mod (`mod/magpie-pane`): each Herdr pane running Claude Code shows its model (orange with ⚠ on a fallback), account, context bar, running subagents and a failed last request. The installer sets it on `my-main`. It updates while the panel runs.

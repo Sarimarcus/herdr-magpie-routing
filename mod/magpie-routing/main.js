@@ -41,13 +41,15 @@ for s in "$@"; do
     FNR == 1 { if (NR > 1) print ""; n = FILENAME; sub(/.*\\/agent-/, "", n); sub(/\\.meta\\.json$/, "", n); printf "@agent %s %s ", s, n }
     { printf "%s", $0 } END { if (NR) print "" }'
 done`;
-// Session titles: the latest custom or AI title in each transcript, as its JSON field. Ids come in as "$@".
+// Session titles: the latest custom title in each transcript (what /rename set, and the terminal shows),
+// else the latest AI title, as its JSON field. Claude Code keeps writing AI titles after a rename. Ids come in as "$@".
 // A headless run (claude -p) has none: its first prompt comes back as "headless" instead.
 const TITLES = `${SH_TX}
 for s in "$@"; do
   f=$(tx "$s")
   [ -n "$f" ] || continue
-  t=$(tac "$f" | grep -m 1 -o '"\\(customTitle\\|aiTitle\\)":"\\([^"\\\\]\\|\\\\.\\)*"')
+  t=$(tac "$f" | grep -m 1 -o '"customTitle":"\\([^"\\\\]\\|\\\\.\\)*"')
+  [ -n "$t" ] || t=$(tac "$f" | grep -m 1 -o '"aiTitle":"\\([^"\\\\]\\|\\\\.\\)*"')
   if [ -z "$t" ] && head -n 50 "$f" | grep -q '"entrypoint":"sdk-cli"'; then
     t=$(grep -m 1 -o '"role":"user","content":"\\([^"\\\\]\\|\\\\.\\)*"' "$f" | sed 's/^"role":"user","content"/"headless"/')
     t=\${t:-'"headless":""'}
@@ -430,6 +432,7 @@ export default class MagpieRouting extends View {
       if (!agent || !g?.last) continue;
       const r = g.lastCtx, oneM = g.maxCtx > 200_000 || this.oneM.has(sid);
       const info = {
+        title: this.titles.get(sid) || null,
         model: shortModel(servedOf(g.last)),
         fb: fellBack(this.groups, g.last),
         acct: this.acctOf(g.last),
@@ -481,12 +484,12 @@ export default class MagpieRouting extends View {
     this.accounts.forEach((a, ai) => {
       // An agent with several accounts: each one by name, ● for the one signed in, agent and plan under it.
       const many = this.accounts.filter((x) => x.agent === a.agent).length > 1;
-      const label = (i) => (!many ? div().w(80).child(i ? "" : a.agent)
+      const label = (i) => (!many ? div().w(80).flex_none().child(i ? "" : a.agent)
         // Clicking an account not signed in signs the agent in to it.
-        : i === 0 ? div().id(`qa-${ai}`).w(80).truncate().text_color(a.active ? t.ansi2 : t.foreground).child(`${a.active ? "●" : "○"} ${acctName(a)}`)
+        : i === 0 ? div().id(`qa-${ai}`).w(80).flex_none().truncate().text_color(a.active ? t.ansi2 : t.foreground).child(`${a.active ? "●" : "○"} ${acctName(a)}`)
           .when(!a.active, (e) => e.cursor_pointer().hover((s) => s.text_color(t.ansi2)).on_click((_e, cx) => this.act(cx,
             ["accounts", "switch", a.agent, a.alias || String(a.user).split(" · ")[0]], `${a.agent} switched to ${acctName(a)}`)))
-        : div().w(80).truncate().text_size(11).text_color(t.dim).child(i === 1 ? `${[a.agent, a.plan].filter(Boolean).join(" ")}` : ""));
+        : div().w(80).flex_none().truncate().text_size(11).text_color(t.dim).child(i === 1 ? `${[a.agent, a.plan].filter(Boolean).join(" ")}` : ""));
       if (ai) rows.push(div().px(14).py(3).child(div().h(1).bg(t.border)));
       const wins = (a.windows || []).filter((w) => !/·/.test(w.name) || w.used > 0);
       // No quota figures (an API-key plugin such as agy-cli reports every window at 0%): its traffic from the log instead.
@@ -507,9 +510,9 @@ export default class MagpieRouting extends View {
         const pct = Math.min(100, Math.max(0, w.used)), pc = pace(w);
         rows.push(row(`q-${ai}-${i}`)
           .child(label(i))
-          .child(div().w(58).text_color(t.muted).truncate().child(w.name))
+          .child(div().w(58).flex_none().text_color(t.muted).truncate().child(w.name))
           .child(bar(t, pct, level(t, pct, 70, t.ansi2), 8).flex_1().min_w(40))
-          .child(div().w(34).text_size(12).child(`${pct}%`))
+          .child(div().w(34).flex_none().whitespace_nowrap().text_size(12).child(`${pct}%`))
           .child(div().w(84).flex_none().text_size(11).whitespace_nowrap().truncate()
             .text_color(!pc ? t.dim : pc.ok ? t.ansi2 : t.ansi1).child(pc ? pc.text : ""))
           .child(div().w(52).flex_none().text_size(11).text_color(t.dim).child(`↻ ${resetIn(w.resetsAt)}`)));

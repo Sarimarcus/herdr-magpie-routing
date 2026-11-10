@@ -68,7 +68,6 @@ export default class MagpiePane extends View {
     const t = theme();
     const p = this.me();
     if (!p) return div();
-    const name = ((p.program?.agent || p.program?.shell) && p.program.name) || p.title || p.program?.name || "shell";
     const pic = icon(p.program, 14, t.dim);
     const st = p.status;
     const pane = p.pane;
@@ -76,6 +75,9 @@ export default class MagpiePane extends View {
     try { snap = shared("magpie.panes"); } catch {}
     const all = snap?.at > Date.now() - STALE_MS ? snap.panes : null;
     const m = all?.[pane] || all?.[p.terminal] || all?.[props()?.terminal];
+    // An agent's session title: the panel's, else the terminal title the agent set (minus its status glyph).
+    const title = m?.title || (p.program?.agent && String(p.title || "").replace(/^[^\p{L}\p{N}]+/u, "").trim());
+    const name = title || ((p.program?.agent || p.program?.shell) && p.program.name) || p.title || p.program?.name || "shell";
     return h_flex()
       .id(`pane-head-${pane}`)
       .size_full()

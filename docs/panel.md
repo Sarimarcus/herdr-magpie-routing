@@ -90,7 +90,7 @@ On the right: failed requests (`N err`) if any, requests in the last hour, **cac
 
 ## Pane header
 
-The `magpie-pane` mod replaces Herdr's pane header. It keeps the program, name, folder, status and hover buttons, and adds, for a pane running Claude Code:
+The `magpie-pane` mod replaces Herdr's pane header. It keeps the program icon, folder, status and hover buttons, shows an agent's session title instead of the program name, and adds, for a pane running Claude Code:
 
 ```
 Claude Code  ~/dev/app            opus-5-5 · pro ▬▬── 147k/1M  2 sub  ✕ 529
