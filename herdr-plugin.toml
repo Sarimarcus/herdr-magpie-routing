@@ -1,6 +1,6 @@
 id = "olivier.magpie-routing"
 name = "Magpie Routing"
-version = "0.5.0"
+version = "0.5.1"
 min_herdr_version = "0.9.0"
 description = "Live view of magpie's model routing: which model each group sends to, fallbacks, quotas and the latest requests."
 platforms = ["linux", "macos"]

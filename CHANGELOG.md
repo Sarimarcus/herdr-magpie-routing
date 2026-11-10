@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.5.1 (2026-11-10)
 
 - Pane header: shows the session's title instead of `Claude Code`.
 - A session renamed with `/rename` is matched to its pane by that name: the panel now prefers the custom title over the AI titles Claude Code keeps writing after it.
