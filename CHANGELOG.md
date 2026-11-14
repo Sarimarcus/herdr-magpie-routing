@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.6.1 (2026-11-14)
+
+- Sessions: a subagent the panel has no meta for (older than the 80 newest it reads) folds into `✓ +N finished` instead of listing as `subagent <id>`. A session with hundreds of subagents no longer fills the panel.
+- Sessions: 3 finished subagents get their own line before the rest fold, down from 5.
+
 ## 0.6.0 (2026-11-10)
 
 - Tab bar: a tab nobody named shows its agent's session title (e.g. `WES-378 epic`) instead of its number. A tab you renamed keeps its name. The installer patches `my-tabs` for this; re-run it.
