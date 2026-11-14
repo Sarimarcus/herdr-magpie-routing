@@ -7,7 +7,7 @@ const MACHINE = "vps";
 const FEED = 10;
 const ERRORS = 5;                        // rows in the Errors section
 const SYS_WARN = { load: [1, 1.5], ram: [0.8, 0.9], disk: [0.15, 0.05] };  // header: yellow, red
-const FINISHED = 5;                      // finished subagents listed per session before the rest fold
+const FINISHED = 3;                     // finished subagents listed per session before the rest fold
 const KEEP = 1500;                       // log lines kept in memory
 const ACTIVE_MS = 5 * 60 * 1000;         // "active" and req/min in the header
 const QUIET_MS = 5 * 60 * 1000;          // a running subagent silent this long is flagged
@@ -614,7 +614,8 @@ export default class MagpieRouting extends View {
   // A running subagent silent for QUIET_MS, or any agent whose last request failed, is flagged.
   agentLines(t, sid, agents) {
     const rows = [...agents].map(([id, g]) => ({ id, g, meta: id ? this.agents.get(`${sid}/${id}`) : null }));
-    const rank = (r) => (!r.id ? 0 : r.meta?.finished ? 2 : 1);
+    // No meta: it is older than the newest meta files read, so it folds as finished.
+    const rank = (r) => (!r.id ? 0 : !r.meta || r.meta.finished ? 2 : 1);
     rows.sort((a, b) => rank(a) - rank(b) || b.g.last._end - a.g.last._end);
     // Finished subagents past the newest FINISHED fold into one line; one that failed always stays.
     let shown = 0;

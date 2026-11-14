@@ -83,7 +83,7 @@ Thresholds are constants at the top of `main.js`:
 | `KEEP` | 1500 | Log lines held in memory |
 | `ACTIVE_MS` | 5 min | "Active" sessions and req/min in the header |
 | `QUIET_MS` | 5 min | When a running subagent is flagged as silent (◌) |
-| `FINISHED` | 5 | Finished subagents listed per session before the rest fold into one line |
+| `FINISHED` | 3 | Finished subagents listed per session before the rest fold into one line |
 | `SYS_WARN` | load 1 / 1.5 per core, RAM 80% / 90%, disk 15% / 5% free | Yellow and red thresholds of the health line |
 | `SESSION_WINDOW_MS` | 30 min | How far back Sessions looks |
 | `HEADLESS_IDLE_MS` | 10 min | When a silent headless (`claude -p`) session leaves Sessions |

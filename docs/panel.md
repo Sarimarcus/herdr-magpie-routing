@@ -44,7 +44,7 @@ Under each session, one line per agent:
 
 Each line ends with the model that served its latest request (orange with ⚠ when that was a fallback), its failed-request count if any, its request count and its output tokens.
 
-Only the 5 newest finished subagents get a line. Older ones fold into `✓ +N finished`, with their total requests and output tokens. A finished subagent that failed always keeps its own line.
+Only the 3 newest finished subagents get a line. Older ones fold into `✓ +N finished`, with their total requests and output tokens. A subagent whose meta file is older than the 80 newest the panel reads counts as finished. A finished subagent that failed always keeps its own line.
 
 ## Quota
 
