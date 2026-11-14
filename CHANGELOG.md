@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.6.2 (2026-11-14)
+
+- Latest requests: each request shows the session that sent it, as Sessions names it. Click a row to jump to that session's pane.
+- Docs: why requests can land on an account you didn't pick (fallback, then affinity keeping the session there), and how to turn an account off with magpie's own page.
+
 ## 0.6.1 (2026-11-14)
 
 - Sessions: a subagent the panel has no meta for (older than the 80 newest it reads) folds into `✓ +N finished` instead of listing as `subagent <id>`. A session with hundreds of subagents no longer fills the panel.
