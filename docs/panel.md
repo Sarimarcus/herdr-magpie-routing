@@ -56,11 +56,13 @@ One bar per account window that `magpie accounts --json` reports: 5-hour, 7-day 
 
 An account that reports no quota figures (every window at 0%, as an API-key plugin such as agy-cli does) shows its traffic instead, from the usage log: `5 hours  30 req · 1.3M in · 10k out`, with failed requests in red.
 
-An agent signed in to several accounts (`magpie accounts add claude`) gets one block per account, named by its alias (`magpie accounts alias`) or the part of its email before `@`. **●** marks the account signed in, **○** the others; the agent and plan sit under the name. Click a **○** account to switch the agent to it (`magpie accounts switch`); a toast says whether it worked.
+An agent signed in to several accounts (`magpie accounts add claude`) gets one block per account, named by its alias (`magpie accounts alias`) or the part of its email before `@`. **●** marks the account signed in, **○** the others; the agent and plan sit under the name. Click a **○** account to switch the agent to it (`magpie accounts switch`); a toast says whether it worked. Switching doesn't stop magpie from serving on the other accounts: to turn one off, see [Troubleshooting](troubleshooting.md#requests-use-an-account-you-didnt-pick).
 
 ## Latest requests
 
-The last 10 requests: time, the group or model asked for, the model that served it, context → output tokens, and duration.
+The last 10 requests: time, the group or model asked for, the session that sent it, the model that served it, context → output tokens, and duration.
+
+The session reads as in Sessions: its title, else its folder and short id, `↳ parent` for a subagent's scratchpad session, `—` for a request with no session (magpie's own calls). Click a row to jump to that session's pane, when it can be matched.
 
 | Tag | Meaning |
 |---|---|

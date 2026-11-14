@@ -674,13 +674,23 @@ export default class MagpieRouting extends View {
       .child(stat(`disk ${Math.round(diskFree / 1048576)}G free`, 1 - diskShare, diskShare <= SYS_WARN.disk[0], diskShare <= SYS_WARN.disk[1]));
   }
 
+  // A request's session reads as in Sessions, and a click focuses its pane when the title matches one.
   feedRows(t) {
-    return this.reqs.slice(-FEED).reverse().map((r, i) => h_flex().id(`r-${i}`).px(14).h(20).gap(8).items_center().text_size(11)
+    const byTitle = this.agentsByTitle();
+    return this.reqs.slice(-FEED).reverse().map((r, i) => {
+      const agent = r.session ? this.agentFor(r.session, byTitle) : null;
+      return h_flex().id(`r-${i}`).px(14).h(20).gap(8).items_center().text_size(11)
+      .when(agent, (e) => e.cursor_pointer().hover((s) => s.bg(t.raised)).on_click(() => { try { run("agent.focus", { terminal: agent.address }); } catch {} }))
       .child(div().w(56).flex_none().text_color(t.dim).child(hhmm(r.t)))
       .child(div().w(80).flex_none().truncate().text_color(t.muted).child(askedOf(r)))
-      .child(div().flex_1().min_w(0).truncate().text_color(failed(r) ? t.ansi1 : t.foreground)
-        .child(shortModel(servedOf(r)) + (this.acctOf(r) ? ` · ${this.acctOf(r)}` : "") + (r.kind ? ` · ${r.kind}` : "") + statusTag(r)))
-      .child(div().flex_none().text_color(t.dim).child(`${kTok(ctxOf(r))} → ${kTok(r.out)} · ${((r.ms || 0) / 1000).toFixed(1)}s`)));
+      .child(div().w(90).flex_none().truncate().text_color(t.dim).child(r.session ? this.sessionLabel(r.session) : "—"))
+      // The model truncates before the account, which stays readable in a narrow panel.
+      .child(div().flex_shrink_1().min_w(0).truncate().text_color(failed(r) ? t.ansi1 : t.foreground)
+        .child(shortModel(servedOf(r)) + (r.kind ? ` · ${r.kind}` : "") + statusTag(r)))
+      .when(this.acctOf(r), (e) => e.child(div().flex_none().whitespace_nowrap().text_color(t.ansi4).child(this.acctOf(r))))
+      .child(div().flex_1())
+      .child(div().flex_none().text_color(t.dim).child(`${kTok(ctxOf(r))} → ${kTok(r.out)} · ${((r.ms || 0) / 1000).toFixed(1)}s`));
+    });
   }
 
   errorRows(t) {

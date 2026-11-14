@@ -31,6 +31,17 @@ The desktop app has the mod open. Quit herdr-app and run the installer again.
 
 Press **Ctrl+Alt+Shift+Escape** to return to the default layout, then check `my-main.json` against its `.bak` copy.
 
+## Requests use an account you didn't pick
+
+The `●` in Quota marks the account the agent is signed in to, but magpie can still serve on another one:
+
+- **Fallback:** when the signed-in account fails (a 502, a 429), magpie retries on the next account that is on, and rests the failed one for a while. New sessions in that time start on the other account.
+- **Affinity:** magpie keeps a session on the account that served its last turn, so its prompt cache stays warm. A session that fell back stays there until the hold expires or you start it again (`/clear` or a new session).
+
+Latest requests shows which session each request came from and, after the model, the account that served it.
+
+To keep magpie off an account entirely, turn it off. The magpie CLI has no command for this, and the panel has no button for it: use magpie's own page. On the magpie machine, run `magpie daemon web on`, open the page (through an SSH tunnel when magpie is remote), and untick the account. Its requests then go to the next model in the group's chain instead. `magpie daemon web off` closes the page again.
+
 ## Too many toasts
 
 Each group and kind toasts at most once per `ALERT_EVERY_MS` (10 minutes). Raise it at the top of `main.js` and re-run the installer.
