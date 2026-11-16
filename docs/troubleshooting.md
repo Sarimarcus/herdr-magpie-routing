@@ -15,6 +15,8 @@ They come from `magpie accounts --json` and `magpie groups`, run every 60 second
 
 Titles come from the Claude Code transcript in `~/.claude/projects/*/<session>.jsonl` on the magpie machine. A session that runs on another machine, or hasn't been given a title yet, shows its working folder and short id. With no transcript at all, for example a `claude` process that exited before writing one, it shows `no transcript · <id>`.
 
+A session with no transcript that made only one request goes into a `<group> · N one-shot calls` row. That covers the requests magpie serves by starting a Claude Code process just for that call: the process gets a new session id and its transcript is gone once it exits. A script that sends a lot of these, through `group/csf-prose` for example, shows as one row instead of hundreds.
+
 ## A session isn't clickable
 
 Sessions are matched to Herdr panes by terminal title. If no pane has that title, or two panes share it, there is nothing safe to focus. Renaming one of the sessions fixes the second case.

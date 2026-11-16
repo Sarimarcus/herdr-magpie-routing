@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Sessions: a session that has no transcript and made only one request now goes into a `<group> · N one-shot calls` row, one row per group. Each call magpie serves through a throwaway Claude Code process is a session like this. A pipeline sending hundreds of them no longer pushes your real sessions out of view.
+
 ## 0.6.2 (2026-11-14)
 
 - Latest requests: each request shows the session that sent it, as Sessions names it. Click a row to jump to that session's pane.

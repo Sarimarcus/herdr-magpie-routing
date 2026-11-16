@@ -591,8 +591,46 @@ export default class MagpieRouting extends View {
       .child(div().text_color(col).whitespace_nowrap().child(`${kTok(ctx)}/${oneM ? "1M" : "200k"}`));
   }
 
-  sessionRows(t, sessions) {
-    if (!sessions.length) return [note(t.dim, "no session active in the last 30 min")];
+  // A one-shot call: a single request whose session has no transcript, such as each call magpie serves
+  // through a throwaway Claude Code process. Only judged once the transcript was looked for.
+  oneShot(sid, s) {
+    if (!this.looked.has(sid) || this.cwds.has(sid) || s.agents.size !== 1) return false;
+    return [...s.agents.values()][0].n === 1;
+  }
+
+  // One-shot calls fold into one row per group they asked, newest group first.
+  oneShotRows(t, shots) {
+    const byReq = new Map();
+    for (const [, s] of shots) {
+      const r = s.last, f = byReq.get(askedOf(r)) || { n: 0, out: 0, fails: 0, last: null, lastFail: null, models: new Set() };
+      f.n++; f.out += r.out || 0; f.models.add(shortModel(servedOf(r)));
+      if (failed(r)) { f.fails++; f.lastFail = later(f.lastFail, r); }
+      f.last = later(f.last, r);
+      byReq.set(askedOf(r), f);
+    }
+    return [...byReq].sort((a, b) => b[1].last._end - a[1].last._end).map(([req, f]) => {
+      const age = sinceEnd(f.last);
+      const dot = f.fails ? t.ansi1 : age < 60_000 ? t.ansi2 : age < ACTIVE_MS ? t.ansi3 : t.raised;
+      const line = h_flex().pl(16).h(20).gap(6).items_center().overflow_hidden().whitespace_nowrap().text_size(11)
+        .child(div().w(10).flex_none().text_color(t.dim).child("·"))
+        .child(div().flex_1().min_w(0).truncate().text_color(t.dim).child("no transcript · 1 request each"))
+        .child(div().flex_shrink_1().min_w(0).truncate().text_color(t.muted).child([...f.models].join(", ")))
+        .when(f.fails, (e) => e.child(div().flex_none().text_color(t.ansi1).child(`${f.fails} err`)))
+        .child(div().flex_none().text_color(t.dim).child(`${f.n} req · ${kTok(f.out)}`));
+      return v_flex().id(`o-${req}`).px(14).py(4).gap(1)
+        .child(h_flex().gap(8).items_center()
+          .child(div().w(8).h(8).rounded(4).flex_none().bg(dot))
+          .child(div().flex_1().min_w(0).truncate().font_semibold().child(`${req} · ${f.n} one-shot call${f.n > 1 ? "s" : ""}`))
+          .child(div().w(52).flex_none().text_size(11).text_color(t.dim).child(ago(f.last._end))))
+        .child(line)
+        .when(f.fails, (e) => e.child(errLine(t, f.lastFail, 32)));
+    });
+  }
+
+  sessionRows(t, all) {
+    if (!all.length) return [note(t.dim, "no session active in the last 30 min")];
+    const sessions = all.filter(([sid, s]) => !this.oneShot(sid, s));
+    const shots = all.filter(([sid, s]) => this.oneShot(sid, s));
     const byTitle = this.agentsByTitle();
     return sessions.map(([sid, s]) => {
       const age = sinceEnd(s.last);
@@ -607,7 +645,7 @@ export default class MagpieRouting extends View {
           .child(this.contextCell(t, sid, s))
           .child(div().w(52).flex_none().text_size(11).text_color(t.dim).child(ago(s.last._end))))
         .children(this.agentLines(t, sid, s.agents));
-    });
+    }).concat(this.oneShotRows(t, shots));
   }
 
   // One line per agent in a session: the main agent first, then running subagents, then finished ones.
