@@ -54,7 +54,9 @@ One bar per account window that `magpie accounts --json` reports: 5-hour, 7-day 
 - **Pace:** at the window's average rate so far, `on pace` (green) when it lasts until the reset, otherwise `out in <time>` (red).
 - **↻** time until the window resets.
 
-An account that reports no quota figures (every window at 0%, as an API-key plugin such as agy-cli does) shows its traffic instead, from the usage log: `5 hours  30 req · 1.3M in · 10k out`, with failed requests in red.
+An account that reports no quota figures (every window at 0%, as an API-key plugin such as agy-cli does) shows its traffic instead, from the usage log: `last 5h  30 req · 1.3M in · 10k out`, with failed requests in red.
+
+A provider added with a key (`magpie provider add xai <key>`) has no account in `magpie accounts`, so the panel also reads `magpie providers` and shows each provider that is on and not already listed the same way, by its id. Magpie can't see an allowance kept by the vendor, such as the weekly Grok usage an X plan includes: check that on the vendor's console.
 
 An agent signed in to several accounts (`magpie accounts add claude`) gets one block per account, named by its alias (`magpie accounts alias`) or the part of its email before `@`. **●** marks the account signed in, **○** the others; the agent and plan sit under the name. Click a **○** account to switch the agent to it (`magpie accounts switch`); a toast says whether it worked. Switching doesn't stop magpie from serving on the other accounts: to turn one off, see [Troubleshooting](troubleshooting.md#requests-use-an-account-you-didnt-pick).
 

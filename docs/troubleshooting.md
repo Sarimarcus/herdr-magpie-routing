@@ -9,7 +9,7 @@ The panel reads `~/.config/magpie/usage.jsonl` on the machine named by `MACHINE`
 
 ## Quota and Groups are empty
 
-They come from `magpie accounts --json` and `magpie groups`, run every 60 seconds. The panel looks for `~/.local/bin/magpie`, then `magpie` on `PATH`. A non-interactive SSH shell often has a shorter `PATH`: link magpie into `~/.local/bin`.
+They come from `magpie accounts --json`, `magpie providers` and `magpie groups`, run every 60 seconds. The panel looks for `~/.local/bin/magpie`, then `magpie` on `PATH`. A non-interactive SSH shell often has a shorter `PATH`: link magpie into `~/.local/bin`.
 
 ## A session shows `folder · id` instead of its title
 

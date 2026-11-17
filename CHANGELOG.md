@@ -3,6 +3,8 @@
 ## Unreleased
 
 - Sessions: a session that has no transcript and made only one request now goes into a `<group> · N one-shot calls` row, one row per group. Each call magpie serves through a throwaway Claude Code process is a session like this. A pipeline sending hundreds of them no longer pushes your real sessions out of view.
+- Quota: providers added with a key, such as xAI, now show up as a row with their last 5 hours of requests, like agy-cli. `magpie accounts` doesn't list them, so the panel reads `magpie providers` too.
+- Latest requests: fixed column widths, so the model and account line up from row to row. The session shortens first in a narrow panel.
 
 ## 0.6.2 (2026-11-14)
 

@@ -65,6 +65,7 @@ function headlessLabel(prompt) {
 const ACCOUNTS = `${SH_MAGPIE}
 echo "@@sys $(cut -d' ' -f1 /proc/loadavg 2>/dev/null) $(nproc 2>/dev/null) $(awk '/^MemTotal/{t=$2}/^MemAvailable/{a=$2}END{print t, a}' /proc/meminfo 2>/dev/null) $(df -Pk / 2>/dev/null | awk 'NR==2{print $2, $4}')"
 echo "@@groups"; "$M" groups 2>/dev/null
+echo "@@providers"; "$M" providers 2>/dev/null
 echo "@@accounts"; "$M" accounts --json 2>/dev/null`;
 
 const machineNames = () => machines().map((m) => m.name).filter(Boolean);
@@ -204,6 +205,26 @@ function parseGroups(text) {
     if (m) groups.set(m[1], { routing: m[2], members: m[3].replace(/\s+←.*$/, "").split("→").map((s) => s.trim()) });
   }
   return groups;
+}
+
+// The text of one `@@name` section of the ACCOUNTS output, up to the next marker.
+function sectionOf(out, name) {
+  const tag = `@@${name}\n`, i = out.indexOf(tag);
+  if (i < 0) return "";
+  const rest = out.slice(i + tag.length), j = rest.search(/^@@/m);
+  return j < 0 ? rest : rest.slice(0, j);
+}
+
+// The ids of the providers `magpie providers` lists as on (●), from its text table: name, id, host,
+// then a ● status cell, columns two spaces or more apart. A key provider such as xAI is listed here
+// but not by `magpie accounts`. The status cell is found by its mark, not by position.
+function parseProviders(text) {
+  const ids = [];
+  for (const line of text.split("\n")) {
+    const cols = line.trim().split(/\s{2,}/);
+    if (cols.length >= 3 && /^[\w.-]+$/.test(cols[1]) && cols.slice(2).some((c) => c.startsWith("●"))) ids.push(cols[1]);
+  }
+  return ids;
 }
 
 // Per session and agent, over the last 30 minutes; most recent session first.
@@ -371,11 +392,17 @@ export default class MagpieRouting extends View {
       try {
         const out = (await sh(ACCOUNTS, on)).stdout;
         const i = out.indexOf("@@accounts\n");
-        groups = parseGroups(i < 0 ? out : out.slice(0, i));
+        groups = parseGroups(sectionOf(out, "groups"));
         sys = parseSys(out);
         const json = i < 0 ? "" : out.slice(i + 11).trim();
-        if (!json) error = "magpie accounts failed";
-        else accounts = JSON.parse(json);
+        try {
+          if (!json) error = "magpie accounts failed";
+          else accounts = JSON.parse(json);
+        } catch (e) { error = `magpie accounts failed: ${e?.message ?? e}`; }
+        // Key providers have no account: each gets one with no quota windows, which Quota shows as its traffic.
+        for (const id of parseProviders(sectionOf(out, "providers"))) {
+          if (!accounts.some((a) => a.agent === id)) accounts.push({ agent: id, user: "API key", windows: [], key: true });
+        }
       } catch (e) { error = `magpie accounts failed: ${e?.message ?? e}`; }
       if (seq !== this.accountsSeq) return;
       this.accounts = accounts;
@@ -483,7 +510,7 @@ export default class MagpieRouting extends View {
     if (this.accountsError) rows.push(note(t.ansi1, this.accountsError));
     this.accounts.forEach((a, ai) => {
       // An agent with several accounts: each one by name, ● for the one signed in, agent and plan under it.
-      const many = this.accounts.filter((x) => x.agent === a.agent).length > 1;
+      const many = !a.key && this.accounts.filter((x) => x.agent === a.agent && !x.key).length > 1;
       const label = (i) => (!many ? div().w(80).flex_none().child(i ? "" : a.agent)
         // Clicking an account not signed in signs the agent in to it.
         : i === 0 ? div().id(`qa-${ai}`).w(80).flex_none().truncate().text_color(a.active ? t.ansi2 : t.foreground).child(`${a.active ? "●" : "○"} ${acctName(a)}`)
@@ -499,11 +526,11 @@ export default class MagpieRouting extends View {
           && (!many || r.providerAccount === a.user));
         const errs = mine.filter(failed).length;
         rows.push(row(`q-${ai}`).child(label(0))
-          .child(div().w(58).flex_none().text_color(t.muted).child("5 hours"))
+          .child(div().w(58).flex_none().text_color(t.muted).child("last 5h"))
           .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(mine.length ? t.foreground : t.dim).child(!mine.length ? "no requests"
             : `${mine.length} req · ${kTok(mine.reduce((s, r) => s + ctxOf(r), 0))} in · ${kTok(mine.reduce((s, r) => s + (r.out || 0), 0))} out`))
           .when(errs, (e) => e.child(div().flex_none().text_size(11).text_color(t.ansi1).child(`${errs} err`)))
-          .child(div().flex_none().text_size(11).text_color(t.dim).child("no quota reported")));
+          .child(div().flex_none().text_size(11).text_color(t.dim).child("quota not visible")));
         return;
       }
       wins.forEach((w, i) => {
@@ -719,15 +746,14 @@ export default class MagpieRouting extends View {
       const agent = r.session ? this.agentFor(r.session, byTitle) : null;
       return h_flex().id(`r-${i}`).px(14).h(20).gap(8).items_center().text_size(11)
       .when(agent, (e) => e.cursor_pointer().hover((s) => s.bg(t.raised)).on_click(() => { try { run("agent.focus", { terminal: agent.address }); } catch {} }))
-      .child(div().w(56).flex_none().text_color(t.dim).child(hhmm(r.t)))
-      .child(div().w(80).flex_none().truncate().text_color(t.muted).child(askedOf(r)))
-      .child(div().w(90).flex_none().truncate().text_color(t.dim).child(r.session ? this.sessionLabel(r.session) : "—"))
-      // The model truncates before the account, which stays readable in a narrow panel.
-      .child(div().flex_shrink_1().min_w(0).truncate().text_color(failed(r) ? t.ansi1 : t.foreground)
+      .child(div().w(50).flex_none().whitespace_nowrap().text_color(t.dim).child(hhmm(r.t)))
+      .child(div().w(46).flex_none().truncate().text_color(t.muted).child(askedOf(r)))
+      // The session takes what the fixed columns leave, so a narrow panel shortens it first.
+      .child(div().flex_1().min_w(40).truncate().text_color(t.dim).child(r.session ? this.sessionLabel(r.session) : "—"))
+      .child(div().w(96).flex_none().truncate().text_color(failed(r) ? t.ansi1 : t.foreground)
         .child(shortModel(servedOf(r)) + (r.kind ? ` · ${r.kind}` : "") + statusTag(r)))
-      .when(this.acctOf(r), (e) => e.child(div().flex_none().whitespace_nowrap().text_color(t.ansi4).child(this.acctOf(r))))
-      .child(div().flex_1())
-      .child(div().flex_none().text_color(t.dim).child(`${kTok(ctxOf(r))} → ${kTok(r.out)} · ${((r.ms || 0) / 1000).toFixed(1)}s`));
+      .child(div().w(40).flex_none().truncate().text_color(t.ansi4).child(this.acctOf(r) || ""))
+      .child(div().w(112).flex_none().whitespace_nowrap().text_color(t.dim).child(`${kTok(ctxOf(r))} → ${kTok(r.out)} · ${((r.ms || 0) / 1000).toFixed(1)}s`));
     });
   }
 

@@ -17,7 +17,7 @@ Issues and pull requests are welcome: bug reports, an installer for macOS or Lin
 Everything runs as small shell scripts through Herdr's `exec` on the magpie machine:
 
 - `usage.jsonl` is read incrementally. The panel sends its byte offset and gets back only the new whole lines, or the last 1500 lines after a rotation.
-- `magpie groups` and `magpie accounts --json` run every 60 seconds.
+- `magpie groups`, `magpie providers` and `magpie accounts --json` run every 60 seconds.
 - Transcript titles and subagent metadata are read only for sessions active in the last 30 minutes.
 
 `exec` has a fixed 30-second, 8 MiB limit, so keep every script's output bounded.
