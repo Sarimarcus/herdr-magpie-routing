@@ -128,8 +128,10 @@ function render() {
     g.last = r;
     byGroup.set(r.req, g);
   }
-  const refs = [...new Set([...groups.keys(), ...byGroup.keys()])].sort();
-  if (!refs.length) out.push(dim(' no group requests yet'));
+  // Deleted groups drop out after their last hour of requests; configured ones always stay.
+  const live = [...byGroup].filter(([, g]) => g.n).map(([ref]) => ref);
+  const refs = [...new Set([...groups.keys(), ...live])].sort();
+  if (!refs.length) out.push(dim(' no groups'));
   for (const ref of refs) {
     const members = groups.get(ref)?.members || [];
     const first = modelOf(members[0]);

@@ -7,9 +7,11 @@
 ## Header
 
 ```
-Magpie [vps]                       2 active · 12 req/min
+Magpie [vps] [claude]              2 active · 12 req/min
 load 1.2/8 · ram 63% · disk 41G free
 ```
+
+The green tag after the machine is the active magpie profile (the one `magpie profiles` marks with ✓, switched with `magpie use <name>`). It is hidden when no profile is active.
 
 The machine being read, the number of sessions that made a request in the last 5 minutes, and the request rate averaged over those 5 minutes.
 
@@ -84,9 +86,13 @@ Cancelled requests (499) aren't listed.
 
 An agent whose requests failed also gets its latest error, in red, on a line under it in Sessions.
 
+A 404 `unknown model` gets a hint line under it. On a group it reads `group deleted — restart the session that still asks for it`: the session still carries the deleted group in its settings, and only a restart picks up the new ones.
+
 ## Groups (last hour)
 
-Each magpie group with its routing and its fallback chain, `first › second › third`. The member that served the group's latest request is highlighted, with ⚠ when it isn't the first.
+Each configured magpie group, plus any group that got a request in the last hour (so a session still calling a deleted group shows up with its errors). A deleted group drops out an hour after its last request. With no groups, the section is hidden.
+
+Each group shows its routing and its routing and its fallback chain, `first › second › third`. The member that served the group's latest request is highlighted, with ⚠ when it isn't the first.
 
 Click the routing next to the name to cycle it `order → usage → pace` (`magpie group set <id> routing=<next>`); a toast says whether it worked. Any other routing (`smart`, `weight`, `manual`…) is shown but not clickable, so a click never loses it; change it with the CLI.
 

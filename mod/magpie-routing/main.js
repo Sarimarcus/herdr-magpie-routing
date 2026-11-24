@@ -66,6 +66,7 @@ const ACCOUNTS = `${SH_MAGPIE}
 echo "@@sys $(cut -d' ' -f1 /proc/loadavg 2>/dev/null) $(nproc 2>/dev/null) $(awk '/^MemTotal/{t=$2}/^MemAvailable/{a=$2}END{print t, a}' /proc/meminfo 2>/dev/null) $(df -Pk / 2>/dev/null | awk 'NR==2{print $2, $4}')"
 echo "@@groups"; "$M" groups 2>/dev/null
 echo "@@providers"; "$M" providers 2>/dev/null
+echo "@@profiles"; "$M" profiles 2>/dev/null
 echo "@@accounts"; "$M" accounts --json 2>/dev/null`;
 
 const machineNames = () => machines().map((m) => m.name).filter(Boolean);
@@ -154,6 +155,15 @@ const bar = (t, pct, col, h) => div().h(h).rounded(h / 2).bg(t.raised).overflow_
 const row = (id) => h_flex().id(id).px(14).h(22).gap(8).items_center();
 const note = (col, text) => div().px(14).h(22).text_color(col).truncate().child(text);
 // An error message without the model name it repeats, cut to a few lines.
+// A 404 "unknown model" on a group means the group no longer exists: the session that asked still
+// carries it in its settings, and only a restart picks up the new ones.
+function causeHint(r) {
+  if (r.status !== 404 || !/unknown model/i.test(errText(r))) return "";
+  return (r.req || "").startsWith("group/") || /^group\//.test(servedOf(r) || "")
+    ? "group deleted — restart the session that still asks for it"
+    : "model not served — check the session's model setting";
+}
+
 function errText(r) {
   const m = String(r.err || "no message").replace(/\s+/g, " ").replace(`${servedOf(r)} `, "");
   return m.length > 200 ? `${m.slice(0, 199)}…` : m;
@@ -296,6 +306,7 @@ export default class MagpieRouting extends View {
     this.accounts = [];
     this.accountsError = null;
     this.sys = null;
+    this.profile = null;   // the profile magpie marks with ✓ in `magpie profiles`
     this.lastAcct = new Map();
   }
 
@@ -388,9 +399,10 @@ export default class MagpieRouting extends View {
   refreshAccounts(cx) {
     const on = machine(), seq = ++this.accountsSeq;
     cx.spawn(async (cx) => {
-      let accounts = [], groups = null, error = null, sys = null;
+      let accounts = [], groups = null, error = null, sys = null, profile = null;
       try {
         const out = (await sh(ACCOUNTS, on)).stdout;
+        profile = sectionOf(out, "profiles").match(/^✓\s+(\S+)/m)?.[1] ?? null;
         const i = out.indexOf("@@accounts\n");
         groups = parseGroups(sectionOf(out, "groups"));
         sys = parseSys(out);
@@ -409,6 +421,7 @@ export default class MagpieRouting extends View {
       this.accountsError = error;
       if (groups) this.groups = groups;
       this.sys = sys;
+      this.profile = profile;
       if (this.groups.size && this.held.length) this.alert(this.held.splice(0));
       cx.notify();
     });
@@ -549,7 +562,10 @@ export default class MagpieRouting extends View {
   }
 
   groupRows(t) {
-    const refs = [...new Set([...this.groups.keys(), ...this.groupStats.keys()])].sort();
+    // A group that was deleted stays out once its last hour of requests is over; one that still gets
+    // requests stays, so a stale session calling a removed group shows up with its errors.
+    const live = [...this.groupStats].filter(([, g]) => g.n).map(([ref]) => ref);
+    const refs = [...new Set([...this.groups.keys(), ...live])].sort();
     return refs.map((ref) => {
       const members = (this.groups.get(ref)?.members || []).map(modelOf);
       const g = this.groupStats.get(ref), served = g?.last ? servedOf(g.last) : null;
@@ -774,7 +790,8 @@ export default class MagpieRouting extends View {
         .child(div().w(80).flex_none().truncate().text_color(t.muted).child(askedOf(r)))
         .child(div().flex_1().min_w(0).truncate().text_color(r.handed_on ? t.blocked : t.ansi1)
           .child(`${shortModel(servedOf(r))}  ${r.status}${r.handed_on ? " · handed on" : ""}${n > 1 ? `  ×${n}` : ""}`)))
-      .child(div().pl(64).text_color(t.muted).child(errText(r))));
+      .child(div().pl(64).text_color(t.muted).child(errText(r)))
+      .when(causeHint(r), (e) => e.child(div().pl(64).text_color(t.blocked).child(causeHint(r)))));
   }
 
   render(_cx) {
@@ -783,6 +800,7 @@ export default class MagpieRouting extends View {
     const sessions = this.loading || this.error ? [] : this.sessions.filter(([sid, s]) =>
       !(this.titles.get(sid) || "").startsWith("headless") || sinceEnd(s.last) < HEADLESS_IDLE_MS);
     const active = sessions.filter(([, s]) => sinceEnd(s.last) < ACTIVE_MS).length;
+    const groupRows = this.loading || this.error ? [] : this.groupRows(t);
     const body = this.error
       ? [div().p(14).text_color(t.ansi1).child(this.error)]
       : this.loading
@@ -792,7 +810,7 @@ export default class MagpieRouting extends View {
             this.section(t, "Quota"), ...this.quotaRows(t),
             this.section(t, "Latest requests", "context → output tokens"), ...this.feedRows(t),
             this.section(t, "Errors", "last hour · handed on = next group member retried it"), ...this.errorRows(t),
-            this.section(t, "Groups", "last hour · ⚠ fallback · cache = context read from cache"), ...this.groupRows(t),
+            ...(groupRows.length ? [this.section(t, "Groups", "last hour · ⚠ fallback · cache = context read from cache"), ...groupRows] : []),
             div().h(12),
           ];
     // 5-minute average: a 60 s window reads 0 between bursts of a working session.
@@ -804,6 +822,8 @@ export default class MagpieRouting extends View {
         .child(div().font_semibold().child("Magpie"))
         .child(div().px(5).py(1).rounded(4).border_1().border_color(t.border).text_size(10).text_color(t.muted)
           .child(this.on ?? "local"))
+        .when(this.profile, (e) => e.child(div().px(5).py(1).rounded(4).bg(t.raised).text_size(10).text_color(t.ansi2)
+          .child(this.profile)))
         .child(div().flex_1())
         .child(div().text_size(11).text_color(t.dim).child(`${active} active · ${perMin} req/min`)))
       .when(this.sys, (e) => e.child(h_flex().h(24).flex_none().px(14).items_center().border_b(1).border_color(t.border)
