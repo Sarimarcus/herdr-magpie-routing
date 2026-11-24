@@ -1,7 +1,10 @@
 # Changelog
 
-## Unreleased
+## 0.7.0 (2026-11-24)
 
+- Header: a tag shows the active magpie profile (`claude`, `codex`…), read from `magpie profiles`.
+- Errors: a 404 `unknown model` says why. On a deleted group it reads `group deleted — restart the session that still asks for it`.
+- Groups: a deleted group no longer lingers. Only configured groups and groups with a request in the last hour are listed, and the section is hidden when there are none.
 - Sessions: a session that has no transcript and made only one request now goes into a `<group> · N one-shot calls` row, one row per group. Each call magpie serves through a throwaway Claude Code process is a session like this. A pipeline sending hundreds of them no longer pushes your real sessions out of view.
 - Quota: providers added with a key, such as xAI, now show up as a row with their last 5 hours of requests, like agy-cli. `magpie accounts` doesn't list them, so the panel reads `magpie providers` too.
 - Latest requests: fixed column widths, so the model and account line up from row to row. The session shortens first in a narrow panel.
